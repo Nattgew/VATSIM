@@ -1,0 +1,88 @@
+LUAW - Closest tfc on appr
+	No sm behind hvy
+	@ sunr/suns, if directive
+		Dep rwy only
+		1 at a time
+	X rwy, exchg tfc
+
+X - A380
+H - >300k, B757 honorary
+M/L - 41k-300k
+S - <41k
+
+Dep		Prev	Rwy						Waive	Min
+Any		Any		Same					No		Past rwy end/turned
+Any		Hvy		Same/|| < 2500			No		2
+Any		Hvy		X/|| > 2500 Xpath		Yes		2
+Any		ArrHvy	Dep thru arr path		Yes		2
+Any		Hvy		@/opp dir				No		3
+Sm		Lrg		@						Yes		3
+
+Dep release: Callsign, rwy, dest
+	All VFR, and when requested
+
+Checks:
+Dep release
+Tfc cross/exit runway
+Adequate separation, wake turbulence/other runways
+Acft on final appr if go around
+
+Wind, addtl info, rwy, clr TO, exit inst
+
+Int: Round down nrst 50 feet avlbl (X ft avlbl)
+
+Dep: no later than 1/2 mile off of the departure end
+
+Issue wake turbulence cautionary advisories, e.g. "CAUTION WAKE TURBULENCE" to:
+	Visual approach or visual separation behind a Heavy or B757. 
+	Any aircraft if in your opinion wake turbulence may have an adverse effect on it. 
+	
+Number X following X on X mi final, tfc will (dep prior to arr/be XX holding in pos)
+	Number X optional if seq by APP
+	
+GA
+	SEA - rwy hdg, 4000, APP
+	PDX - rwy hdg, 3000, APP
+	!APP - D - fly procedure, report MAP
+	
+What is the WT restriction for departing behind arriving heavy? Take off through flight path?
+
+Minutes of separation: start timer when begins to roll?
+
+General separation requirements? When to issue tfc advisory?
+
+	
+.bangr Cleared to $arr via the BANGR7 departure, $1, then as filed. Climb via SID except maintain 15000, expect $cruise 15 mi from the SEA VOR. Departure frequency 125.6, squawk $squawk.
+
+.elmaa Cleared to $arr via the ELMAA1 departure, $1, then as filed. Climb maintain 9000, expect $cruise 15 mi from the SEA VOR. Departure frequency 125.6, squawk $squawk.
+
+.harob Cleared to $arr via the HAROB4 departure, $1, then as filed. Climb via SID except maintain 15000, expect $cruise 15 mi from the SEA VOR. Departure frequency 125.6, squawk $squawk.
+
+.kmore Cleared to $arr via the HAROB4 departure, then as filed. Climb via SID except maintain 15000, expect $cruise 15 mi from the SEA VOR. Departure frequency 125.6, squawk $squawk.
+
+.ktsap Cleared to $arr via the KTSAP4 departure, then as filed. Climb via SID except maintain 15000, expect $cruise 15 mi from the SEA VOR. Departure frequency 125.6, squawk $squawk.
+
+.mtn Cleared to $arr via the MTN6 departure, $1, then as filed. Climb maintain 9000, expect $cruise 15 mi from the SEA VOR. Departure frequency 125.6, squawk $squawk.
+
+.sea Cleared to $arr via the SEA4 departure, $1, then as filed. Climb maintain 9000, expect $cruise 10 min after departure. Departure frequency 125.6, squawk $squawk.
+
+.summa Cleared to $arr via the SUMMA7 departure, $1, then as filed. Climb maintain 9000, expect $cruise 10 min after departure. Departure frequency 125.6, squawk $squawk.
+
+.tsea Runway 16L, taxi via B, altimeter $altim(KSEA).
+
+.clrpdx Cleared to $arr via the $1 departure, $2, then as filed. Maintain 9000, expect $cruise 10 min after departure. Departure frequency 124.35, squawk $squawk.
+
+.clrpdx1 Cleared to $arr via the PTLD1 departure, $1, then as filed. Maintain 9000, expect $cruise 5 min after departure. Departure frequency 124.35, squawk $squawk.
+
+.clrseav cleared to operate in the SEA class B, maintain VFR at or below 2500, squawk $squawk, runway 16L, taxi via B, altimeter $altim(KSEA).
+
+.rc Readback correct, pushback/start approved, advise when ready to taxi. Expect runway $1.
+
+.ct $winds, runway $1, cleared for takeoff.
+
+.cdep Contact departure, have a nice flight.
+
+.csea Contact tower 119.9, have a nice flight.
+
+.cpdx Contact tower 123.77, have a nice flight.
+
