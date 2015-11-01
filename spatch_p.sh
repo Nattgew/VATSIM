@@ -19,10 +19,21 @@ function fsed {
 colors="#define gate 48\n#define tway 15766860"
 pre=";Awesomesauce"  #Header to make added content easily located
 
-echo "Adding colors"
+echo "Adding colors..."
 #Add colors to top of file
 #sed -i "s/#define background 0/$pre\\n$colors\\n\\n&/g" "$1"
 perl -p -i -e "s/#define background 0/$pre\n$colors\n\n#define background 0/g" "$1"
+
+echo "Haxxoring version..."
+sed -i "s/P80 TRACON/P80 Awesomesauce/g" "$1"
+
+echo "Replacing taxiway colors..."
+IN=$(grep -n '"[A-Z][0-9]*".' "$1")
+for line in "${IN[@]}"; do
+	IFS=':' read -ra parts <<< "$IN"
+	#echo ${parts[0]}
+	sed -i "s/Taxi/t/g" "$1"
+done
 
 echo "Commenting out lines"
 #Comment out lines listed in the rem file
@@ -32,6 +43,7 @@ while read -r stricken; do
 	$(fsed "$stricken" "; $stricken" "$1")
 done < "rem_p80.txt"
 
+echo "Adding the good stuff..."
 #Define files with new content and the label under which they should be inserted
 matches=("lbl_p80.txt" "[LABELS]" "lin_p80.txt" ";APD: KPDX")
 #Loop through the files/matches to insert the new stuff
@@ -40,7 +52,7 @@ while [ $i -lt 4 ]; do
 	IN=$(grep -Fn "${matches[$((i+1))]}" "$1")
 	for line in "${IN[@]}"; do
 		IFS=':' read -ra parts <<< "$IN"
-		echo ${parts[0]}
+		#echo ${parts[0]}
 		targ=$((${parts[0]}+1))
 		sed -i "${targ}i$pre\n" "$1" #Put the comment label in
 		while read -r awesome; do
