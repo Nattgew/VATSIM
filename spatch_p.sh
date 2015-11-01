@@ -28,11 +28,11 @@ echo "Haxxoring version..."
 sed -i "s/P80 TRACON/P80 Awesomesauce/g" "$1"
 
 echo "Replacing taxiway colors..."
-IN=$(grep -n '"[A-Z][0-9]*".' "$1")
-for line in "${IN[@]}"; do
-	IFS=':' read -ra parts <<< "$IN"
-	#echo ${parts[0]}
-	sed -i "s/Taxi/t/g" "$1"
+IFS='
+'
+for line in $(grep -n '"[A-Z][0-9]*".' "$1"); do
+	IFS=':' read -ra parts <<< "$line"
+	sed -i "${parts[0]}s/Taxi/t/g" "$1"
 done
 
 echo "Commenting out lines"

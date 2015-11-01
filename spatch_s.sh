@@ -28,11 +28,11 @@ echo "Haxxoring version..."
 sed -i "s/S46 PRO/S46 Awesomesauce/g" "$1"
 
 echo "Replacing taxiway colors..."
-IN=$(grep -n '"[A-Z][0-9]*".' "$1")
-for line in "${IN[@]}"; do
-	IFS=':' read -ra parts <<< "$IN"
-	#echo ${parts[0]}
-	sed -i "s/Taxi/t/g" "$1"
+IFS='
+'
+for line in $(grep -n '"[A-Z][0-9]*".' "$1"); do
+	IFS=':' read -ra parts <<< "$line"
+	sed -i "${parts[0]}s/Taxi/t/g" "$1"
 done
 
 echo "Commenting out lines"
@@ -41,7 +41,7 @@ while read -r stricken; do
 	echo "Commenting out $stricken"
 	#sed -i "s/$stricken/; &/g" "$1"
 	$(fsed "$stricken" "; $stricken" "$1")
-done < "rem_p80.txt"
+done < "rem_s46.txt"
 
 echo "Adding the good stuff..."
 #Define files with new content and the label under which they should be inserted
