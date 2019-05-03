@@ -32,7 +32,8 @@
 # [HIGH AIRWAY]
 # [GEO] ;unused
 
-import re, math
+import re, math, os
+from pathlib import Path
 
 def cosinedist(coord1,coord2): #Use cosine to find distance between coordinates
 	lat1,lon1 = coord1
@@ -74,6 +75,7 @@ sectorfiles=[
 	"LMT_APP_PRO_V1",
 	"MFR_APP_PRO_V1_1",
 	"MWH_APP_PRO_V1",
+	"NUW_APP_PRO_V1",
 	"OTH_TWR_V1",
 	"P80_TRACON_PRO_V1_2",
 	"PSC_APP_PRO_V1",
@@ -87,7 +89,7 @@ airportsector={
 	"KSEA":"S46",
 	"KPDX":"P80"
 }
-
+sectordir=Path(r'')
 #Current airac cycle, part of filenames
 airac="1903"
 
@@ -100,6 +102,7 @@ airac="1903"
 	#sectorname=sfile[:3]
 sfile="ZSE-v3_05"
 sectorname="ZSE"
+print("Processing "+sfile)
 
 #These are the sections we are looking for
 #These are the only ones VRC recognizes
@@ -122,7 +125,7 @@ subsecs={"sid":{},"star":{}}
 airports={}
 
 #This will come from the KML reader to exclude existing labels near these fields
-allnewdiagrams=["KSEA"]
+allnewdiagrams=["KSEA","KPDX"]
 if sectorname=="ZSE":
 	#ZSE will include everything
 	newairports=allnewdiagrams
@@ -132,12 +135,15 @@ else:
 	for newdiag in allnewdiagrams:
 		if airportsector[newdiag]==sectorname:
 			newairports.append(newdiag)
+print("  Will include airports: "+str(newairports))
 
+colordef={}
 #Start with the header section of comments
 currsec="header"
 subsec=""
-currfile=sfile+"_"+airac+".sct2"
-f=open(r+currfile,'r')
+filename=sfile+"_"+airac+".sct2"
+currfile=sectordir / filename
+f=open(currfile,'r')
 for line in f:
 	#Build the airport coordinates dictionary
 	if currsec=="airport": #do this first so we skip the header line
@@ -156,6 +162,13 @@ for line in f:
 	#Maybe could be combined with headers
 	if re.search("^#define",line) is not None:
 		currsec="colors"
+		elemss=[i for i in line.strip().split(' ') if i!='']
+		elemst=[i for i in line.strip().split('\t') if i!='']
+		#print(elems)
+		if len(elemss)>2:
+			colordef[elemss[1].lower()]=0
+		elif len(elemst)>2:
+			colordef[elemst[1].lower()]=0
 	#Otherwise we're in the thick of it, see if we're starting a new section
 	elif currsec!="headers":
 		for key in sections.keys():
@@ -175,11 +188,11 @@ for line in f:
 		#If either of these matches, start a new section
 		if reparen is not None:
 			subsec=reparen[1] #Get name of subsection
-			print("New subsec: "+subsec)
+			#print("New subsec: "+subsec)
 			subsecs[currsec][subsec]=line #Add the header line to it
 		elif reeq is not None:
 			subsec=reeq[1]
-			print("New subsec: "+subsec)
+			#print("New subsec: "+subsec)
 			subsecs[currsec][subsec]=line
 		# for key,sub in subsecs.items():		
 			# print(sub)
@@ -187,6 +200,11 @@ for line in f:
 			#print("Adding to "+currsec+" -> "+subsec)
 			subsecs[currsec][subsec]+=line
 		sections[currsec]+=line #write to the main list too
+		elems=[i for i in line.strip().split(' ') if i!='']
+		if len(elems)>4:
+			color=elems[4].lower()
+			if color in colordef:
+				colordef[color]=1
 	else: #Any other random line
 		subsec="" #Just in case
 		sections[currsec]+=line
@@ -197,36 +215,44 @@ keptlines=""
 #Print out the names and locations of airports to prune, mostly for debug
 for newapt in newairports:
 	coords=airports[newapt]
-	print("Will prune for %s: %f,%f" % (newapt,coords[0],coords[1]))
+	print("  Will prune for %s: %f,%f" % (newapt,coords[0],coords[1]))
 #Actually prune all labels lines
 for line in sections["labels"].split('\n'):
 	# reicao=re.search("^;.+K[A-Z0-9]{3}",line)
 	# if reicao is not None:
 		# print("Found airport labels for: "+line)
 	#See if line looks like a label
+	elems=[i for i in line.strip().split(' ') if i!='']
+	if len(elems)>3:
+		color=elems[3].lower()
+		if color in colordef:
+			colordef[color]=1
 	relbl=re.search('^".+" +[NS]',line)
 	if relbl is not None:
 		#print("Found label: "+line)
 		#Split by spaces and remove spaces/newline
-		lblelems=[i for i in line.strip().split(' ') if i!='']
-		#Convert coords to decimal
-		lblcoords=dmstodd([lblelems[1],lblelems[2]])
-		#Check against new airports
+		lblsplit=[i for i in line.strip().split('"') if i!='']
+		lblelems=[i for i in lblsplit[1].strip().split(' ') if i!='']
 		prune=0
-		for newapt in newairports:
-			#Calculate distance of label from airport
-			dist=cosinedist(airports[newapt],lblcoords)
-			#Prune if distance less than theshold
-			#3 seems to just exclude our closest cases while accounding for large fields
-			#Could possibly be smaller
-			#Another way to do this would be to draw exclusion zones around each airport like X-Plane does
-			if dist<3:
-				prune=1
-				break
-			# if dist<8:
-				# print(dist)
-		# if prune:
-			# print("Pruning for "+newapt+":"+line)
+		#print(lblelems)
+		if len(lblelems)>2:
+			#Convert coords to decimal
+			lblcoords=dmstodd([lblelems[0],lblelems[1]])
+			#Check against new airports
+			for newapt in newairports:
+				#Calculate distance of label from airport
+				dist=cosinedist(airports[newapt],lblcoords)
+				#Prune if distance less than theshold
+				#3 seems to just exclude our closest cases while accounding for large fields
+				#Could possibly be smaller
+				#Another way to do this would be to draw exclusion zones around each airport like X-Plane does
+				if dist<3:
+					prune=1
+					break
+				# if dist<8:
+					# print(dist)
+			# if prune:
+				# print("Pruning for "+newapt+":"+line)
 		if not prune:
 			keptlines+=line #Keep anything not pruned
 
@@ -267,9 +293,12 @@ with open(newfile,"w") as newsct:
 				#print("Writing sub: "+subkey)
 				newsct.write(subcon)
 		else: #Business as usual
-			print("Writing: "+key)
+			print("  Writing: "+key)
 			newsct.write(contents)
-
+print(colordef)
+for color,used in colordef.items():
+	if not used:
+		print("Color not used: "+color)
 #Needs to be cleaned up, not all filenames work
 # for key in subsecs.keys():
 	# with open(key+".txt","w") as partfile:
