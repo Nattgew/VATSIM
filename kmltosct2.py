@@ -37,6 +37,7 @@ for document in root:
 						pmname=elpmname[0].text
 					elpts=pmark.findall("egc:Point",ns)
 					ellin=pmark.findall("egc:LineString",ns)
+					elpol=pmark.findall("egc:Polygon",ns)
 					if len(elpts)>0:
 						for pt in elpts:
 							print("     "+pt.tag)
@@ -53,6 +54,21 @@ for document in root:
 								rawcoordlist=[i.strip() for i in elcoord[0].text.strip().split(' ') if i!='']
 								print("     coordlist")
 								apd[catname][icao][colorname].append([rawcoordlist])
+					if len(elpol)>0:
+						for poly in elpol:
+							print("     "+poly.tag)
+							elobi=poly.findall("egc:outerBoundaryIs",ns)
+							if len(elobi)>0:
+								for bdry in elobi:
+									ellinrng=bdry.findall("egc:LinearRing",ns)
+									if len(ellinrng)>0:
+										for ring in ellinrng:
+											elcoord=ring.findall("egc:coordinates",ns)
+											if len(elcoord)>0:
+												rawcoordlist=[i.strip() for i in elcoord[0].text.strip().split(' ') if i!='']
+												print("     coordlist")
+												apd[catname][icao][colorname].append([rawcoordlist])
+
 #print(apd)
 #print(labels)
 print("\n")
