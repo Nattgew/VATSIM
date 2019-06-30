@@ -1,18 +1,20 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 import re
 import random
 import pickle
+import MySQLdb
 from enginetype import etype
 from pathlib import Path
 import math
+import sys
 
 #Callsign:Type:Engine:Rules:Dep Field:Arr Field:Crz Alt:Route:Remarks:Sqk Code:Sqk Mode:Lat:Lon:Alt:Speed:Heading
 
-def makeairfile(fps, spots, felev):
+def makeairfile(fps, spots, felev, outfile):
     # Write a new air file with these values
     # Where to save the file
-    outfile = Path(r"")
+    # outfile = Path(r"")
     with open(outfile, "w") as airfile:
         for fp, spot in zip(fps, spots):
             print("Adding "+fp['callsign']+" to "+spot[0])
@@ -61,15 +63,36 @@ def getrndmode():
         mode = "S"
     return mode
 
-def getfplist():
-    # Location of file with flight plans
-    fpfile = Path(r"")
-    flightplanlist = pickle.load(open(fpfile, "rb"))
+def getfplist(airport):
+    print("Making mysql connection...")
+    db = MySQLdb.connect(host="",    # your host, usually localhost
+                         user="",         # your username
+                         passwd="",  # your password
+                         db="")        # name of the data base
+    db.set_character_set('utf8')
+    cur = db.cursor()
+    cur.execute('SET NAMES utf8;')
+    cur.execute('SET CHARACTER SET utf8;')
+    cur.execute('SET character_set_connection=utf8;')
+
+    keys = ["callsign", "cid", "realname", "clienttype", "frequency", "latitude", "longitude", "altitude", "groundspeed", "planned_aircraft", "planned_tascruise", "planned_depairport", "planned_altitude", "planned_destairport", "server", "protrevision", "rating", "transponder", "facilitytype", "visualrange", "planned_revision", "planned_flighttype", "planned_deptime", "planned_actdeptime", "planned_hrsenroute", "planned_minenroute", "planned_hrsfuel", "planned_minfuel", "planned_altairport", "planned_remarks", "planned_route", "planned_depairport_lat", "planned_depairport_lon", "planned_destairport_lat", "planned_destairport_lon", "atis_message", "time_last_atis_received", "time_logon", "heading", "QNH_iHg", "QNH_Mb"]
+    flightplanlist = []
+
+    print("Looking for matching rows at "+airport+"...")
+    ret = cur.execute('SELECT * FROM flights WHERE planned_depairport = %s', (airport,))
+    print("Found "+str(ret)+" rows:")
+    for match in cur.fetchall():
+    	#print(match)
+    	client = {}
+    	for key, val in zip(keys, match):
+    		#print(key+" = "+str(val))
+    		client[key] = str(val)
+    	flightplanlist.append(client)
     return flightplanlist
 
-def randomfp():
+def randomfp(airport):
     # Should return a random flight plan object
-    fplist = getfplist()
+    fplist = getfplist(airport)
     return random.choice(fplist)
 
 def manglealt(alt):
@@ -78,14 +101,14 @@ def manglealt(alt):
     print("Mangled "+alt+" -> "+newalt)
     return newalt
 
-def mangleroute(route):
+def mangleroute(airport, route):
     # Chance of just swapping with another route
     chance_swap = 0.1
     # Chance of just filing DCT
     chance_dct = 0.1
     roll = random.randint(0,100)
     # Get a new route to use for shenanigans
-    newplan = randomfp()
+    newplan = randomfp(airport)
     newroute = newplan['planned_route']
     if roll < chance_swap*100:
         # Already have the new route to use
@@ -142,7 +165,7 @@ def splittype(type):
         type = fields[0]
         if len(fields) > 1:
             ec = fields[1]
-    
+
     return [wt, type, ec]
 
 def mangleec(type):
@@ -168,7 +191,7 @@ def mangleec(type):
     newtype = newwt + typefields[1] + newec
     print("Mangled "+type+" -> "+newtype)
     type = newtype
-    
+
     return type
 
 def manglefp(fp):
@@ -178,7 +201,7 @@ def manglefp(fp):
     chance_alt = 0.25
     chance_dest = 0.05
     chance_route = 0.25
-    
+
     # Break items that meet a random roll
     if random.randint(0,100) < chance_ec*100:
         fp['planned_aircraft'] = mangleec(fp['planned_aircraft'])
@@ -187,8 +210,8 @@ def manglefp(fp):
     if random.randint(0,100) < chance_dest*100:
         fp['planned_destairport'] = mangledest(fp['planned_destairport'])
     if random.randint(0,100) < chance_route*100:
-        fp['planned_route'] = mangleroute(fp['planned_route'])
-    
+        fp['planned_route'] = mangleroute(fp['planned_depairport'],fp['planned_route'])
+
     return fp
 
 def cosinedist(latlon1,latlon2): #Use cosine to find distance between coordinates
@@ -203,7 +226,8 @@ def cosinedist(latlon1,latlon2): #Use cosine to find distance between coordinate
     return int(round(d))
 
 # Path to airport file for locations of parking spots
-aptfilepath = Path(r"")
+aptfilepath = Path(sys.argv[1])
+outfile = Path(sys.argv[2])
 # Holds list of spots
 parkingspots=[]
 fieldelev = 0
@@ -246,9 +270,9 @@ gaspots = []
 cargospots = []
 otherspots = []
 for spot in parkingspots:
-    if re.find("GA", spot[0]):
+    if re.search("GA", spot[0]) is not None:
         gaspots.append(spot)
-    elif re.find("CARGO", spot[0]):
+    elif re.search("CARGO", spot[0]) is not None:
         cargospots.append(spot)
     else:
         otherspots.append(spot)
@@ -266,7 +290,7 @@ cargoairlines = ["FDX","UPS","GEC","GTI","ATI","DHL","BOX","CLX","ABW","SQC","AB
 gaaircraft = ["C172","C182","PC12","C208","PA28","BE35"]
 
 # Get list of flight plans to use in random order
-shuffledfps = getfplist()
+shuffledfps = getfplist("KPDX")
 random.shuffle(shuffledfps)
 flightplans = iter(shuffledfps)
 
@@ -319,4 +343,4 @@ while True:
             # nextspot = next(parkingspots)
         thesespots.append(nextspot)
     # Save the file with aircraft in it
-    makeairfile(thesefps, thesespots, fieldelev)
+    makeairfile(thesefps, thesespots, fieldelev, outfile)
