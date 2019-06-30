@@ -26,12 +26,13 @@ def makeairfile(fps, spots, felev, outfile):
 def fptoline(fp, spot, felev):
     # Takes flight plan object and returns line for air file
     # Set the engine type
+    type = splittype(fp['planned_aircraft'])[1]
     try:
         # See if it's in our list
-        engine = etype[fp['planned_aircraft']]
+        engine = etype[type]
     except KeyError:
         # Assume it's a jet, what could go wrong
-        print("Couldn't find engine type for "+fp['planned_aircraft']+", assuming jet")
+        print("Couldn't find engine type for "+type+", assuming jet")
         engine = "J"
     # TODO: find a better way to do this
     # Add main elements from flight plan
@@ -266,24 +267,24 @@ print(parkingspots)
 parkingspots = iter(parkingspots)
 
 # TODO: split into term, cargo, GA, and choose accordingly
-gaspots = []
-cargospots = []
-otherspots = []
+gaspotshuff = []
+cargospotshuff = []
+otherspotshuff = []
 for spot in parkingspots:
     if re.search("GA", spot[0]) is not None:
-        gaspots.append(spot)
+        gaspotshuff.append(spot)
     elif re.search("CARGO", spot[0]) is not None:
-        cargospots.append(spot)
+        cargospotshuff.append(spot)
     else:
-        otherspots.append(spot)
+        otherspotshuff.append(spot)
 
-print("GA: "+str(len(gaspots))+"   CG: "+str(len(cargospots))+"   TR: "+str(len(otherspots)))
-random.shuffle(gaspots)
-random.shuffle(cargospots)
-random.shuffle(otherspots)
-gaspots = iter(gaspots)
-cargospots = iter(cargospots)
-otherspots = iter(otherspots)
+print("GA: "+str(len(gaspotshuff))+"   CG: "+str(len(cargospotshuff))+"   TR: "+str(len(otherspotshuff)))
+random.shuffle(gaspotshuff)
+random.shuffle(cargospotshuff)
+random.shuffle(otherspotshuff)
+gaspots = iter(gaspotshuff)
+cargospots = iter(cargospotshuff)
+otherspots = iter(otherspotshuff)
 
 cargoairlines = ["FDX","UPS","GEC","GTI","ATI","DHL","BOX","CLX","ABW","SQC","ABX","AEG","AJT","CLU","BDA","DAE","DHK","JOS","RTM","DHX","BCS","CKS","MPH","NCA","PAC","TAY","RCF","CAO","TPA","CKK","MSX","LCO","SHQ","LTG","ADB"]
 
@@ -300,7 +301,7 @@ while True:
     if number:
         try:
             actoadd = int(number)
-        except TypeError:
+        except (TypeError, ValueError):
             actoadd = 1
     else:
         actoadd = 1
@@ -316,25 +317,25 @@ while True:
         # Add errors to flight plan
         thesefps.append(manglefp(newfp))
         # Loop through parking spots
-        airline = splittype(newfp['callsign'])[1]
+        airline = newfp['callsign'][:3]
         aircraft = splittype(newfp['planned_aircraft'])[1]
         if airline in cargoairlines:
             try:
                 nextspot = next(cargospots)
             except StopIteration:
-                cargospots = iter(cargospots)
+                cargospots = iter(cargospotshuff)
                 nextspot = next(cargospots)
         elif aircraft in gaaircraft:
             try:
                 nextspot = next(gaspots)
             except StopIteration:
-                gaspots = iter(gaspots)
+                gaspots = iter(gaspotshuff)
                 nextspot = next(gaspots)
         else:
             try:
                 nextspot = next(otherspots)
             except StopIteration:
-                otherspots = iter(otherspots)
+                otherspots = iter(otherspotshuff)
                 nextspot = next(otherspots)
         # try:
             # nextspot = next(parkingspots)
