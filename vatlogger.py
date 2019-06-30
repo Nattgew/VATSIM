@@ -1,7 +1,6 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 import re
-import pickle
 import random
 from pathlib import Path
 import urllib.request
@@ -23,12 +22,13 @@ def newclient(line):
 
     return client
 
+encoding = "utf-8"
 # The status url provides lists of servers
 statusurl = "http://status.vatsim.net/status.txt"
 dataurls = []
 
 with urllib.request.urlopen(statusurl) as response:
-    html = response.read().decode("ansi")
+    html = response.read().decode(encoding, errors='replace')
     for line in html.split('\n'):
         #print(line)
         line = line.rstrip()
@@ -50,7 +50,7 @@ print("Using data url: "+dataurl)
 
 with urllib.request.urlopen(dataurl) as response:
 #with open(datafile, "r") as html:
-    html = response.read().decode("ansi")
+    html = response.read().decode(encoding, errors='replace')
     #print(html)
     # Whether we are reading a section with clients to log
     clientsec = 0
@@ -76,21 +76,32 @@ db = MySQLdb.connect(host="localhost",    # your host, usually localhost
                      user="",         # your username
                      passwd="",  # your password
                      db="")        # name of the data base
+db.set_character_set('utf8')
 cur = db.cursor()
+cur.execute('SET NAMES utf8;')
+cur.execute('SET CHARACTER SET utf8;')
+cur.execute('SET character_set_connection=utf8;')
+
 keys = ["callsign", "cid", "realname", "clienttype", "frequency", "latitude", "longitude", "altitude", "groundspeed", "planned_aircraft", "planned_tascruise", "planned_depairport", "planned_altitude", "planned_destairport", "server", "protrevision", "rating", "transponder", "facilitytype", "visualrange", "planned_revision", "planned_flighttype", "planned_deptime", "planned_actdeptime", "planned_hrsenroute", "planned_minenroute", "planned_hrsfuel", "planned_minfuel", "planned_altairport", "planned_remarks", "planned_route", "planned_depairport_lat", "planned_depairport_lon", "planned_destairport_lat", "planned_destairport_lon", "atis_message", "time_last_atis_received", "time_logon", "heading", "QNH_iHg", "QNH_Mb"]
 
-cur.execute('BEGIN TRANSACTION')
+cur.execute('START TRANSACTION')
 # Go through the current clients and find any we care about
 for client in clients:
     # Use all the SQL you like
-    cur.execute("SELECT COUNT(*) FROM flights WHERE cid = ? AND time_logon = ?", (client['cid'], client['time_logon']))
+    #print("Looking for cid: "+client['cid']+"   time: "+client['time_logon'])
+    cur.execute('SELECT COUNT(*) FROM flights WHERE cid = %s AND time_logon = %s', (client['cid'], client['time_logon']))
     # print all the first cell of all the rows
     exist = cur.fetchone()[0]
     if not exist:
         row = []
         for key in keys:
             row.append(client[key])
-        cur.execute("INSERT INTO flights VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,)", tuple(row))
+#        print("Adding row len "+str(len(row))+":")
+        #print(row)
+        #print(tuple(client.values()))
+        cur.execute('INSERT INTO flights VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)', row)
+    #else:
+        #print("X")
 
 db.commit()
 db.close()
