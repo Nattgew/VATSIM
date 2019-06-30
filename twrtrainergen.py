@@ -2,14 +2,14 @@
 
 import re
 import random
-import pickle
 import MySQLdb
 from enginetype import etype
 from pathlib import Path
 import math
 import sys
 
-#Callsign:Type:Engine:Rules:Dep Field:Arr Field:Crz Alt:Route:Remarks:Sqk Code:Sqk Mode:Lat:Lon:Alt:Speed:Heading
+# Callsign:Type:Engine:Rules:Dep Field:Arr Field:Crz Alt:Route:Remarks:Sqk Code:Sqk Mode:Lat:Lon:Alt:Speed:Heading
+
 
 def makeairfile(fps, spots, felev, outfile):
     # Write a new air file with these values
@@ -22,6 +22,7 @@ def makeairfile(fps, spots, felev, outfile):
             fpline = fptoline(fp, spot, felev)
             # Write the line to the file
             airfile.write(fpline+"\n")
+
 
 def fptoline(fp, spot, felev):
     # Takes flight plan object and returns line for air file
@@ -38,31 +39,34 @@ def fptoline(fp, spot, felev):
     # Add main elements from flight plan
     lit = [fp['callsign'], fp['planned_aircraft'], engine, fp['planned_flighttype'], fp['planned_depairport'], fp['planned_destairport'], fp['planned_altitude'], fp['planned_route'], fp['planned_remarks']]
     # Read transponder, set random mode
-    lit.extend([fp['transponder'],getrndmode()])
+    lit.extend([fp['transponder'], getrndmode()])
     # Coordinates of parking spot
-    lit.extend([ str(i) for i in spot[1] ])
+    lit.extend([str(i) for i in spot[1]])
     # Field elevation
     lit.append(felev)
     # Speed and heading
-    lit.extend(["0","360"])
-    #print(lit)
+    lit.extend(["0", "360"])
+    # print(lit)
     return ":".join(lit)
+
 
 def getrndsq():
     # Gives a random squawk code
     sq = ""
     for i in range(4):
-        sq += str(random.randint(0,7))
+        sq += str(random.randint(0, 7))
     return sq
+
 
 def getrndmode():
     # Returns random squawk mode
-    roll = random.randint(0,1)
+    roll = random.randint(0, 1)
     if roll:
         mode = "N"
     else:
         mode = "S"
     return mode
+
 
 def getfplist(airport):
     print("Making mysql connection...")
@@ -83,18 +87,20 @@ def getfplist(airport):
     ret = cur.execute('SELECT * FROM flights WHERE planned_depairport = %s', (airport,))
     print("Found "+str(ret)+" rows:")
     for match in cur.fetchall():
-        #print(match)
+        # print(match)
         client = {}
         for key, val in zip(keys, match):
-            #print(key+" = "+str(val))
+            # print(key+" = "+str(val))
             client[key] = str(val)
         flightplanlist.append(client)
     return flightplanlist
+
 
 def randomfp(airport):
     # Should return a random flight plan object
     fplist = getfplist(airport)
     return random.choice(fplist)
+
 
 def manglealt(alt):
     if alt[:2] == "FL":
@@ -102,16 +108,17 @@ def manglealt(alt):
     elif alt[:1] == "F":
         alt = int(alt[1:])*100
     # 1/3 chance to remove/add 1000 feet or do nothing
-    newalt = str(int(alt)+1000*random.randint(-1,1))
+    newalt = str(int(alt)+1000*random.randint(-1, 1))
     print("Mangled "+alt+" -> "+newalt)
     return newalt
+
 
 def mangleroute(airport, route):
     # Chance of just swapping with another route
     chance_swap = 0.1
     # Chance of just filing DCT
     chance_dct = 0.1
-    roll = random.randint(0,100)
+    roll = random.randint(0, 100)
     # Get a new route to use for shenanigans
     newplan = randomfp(airport)
     newroute = newplan['planned_route']
@@ -119,19 +126,20 @@ def mangleroute(airport, route):
         # Already have the new route to use
         pass
     elif roll < (chance_swap+chance_dct)*100:
-        newroute="DCT"
+        newroute = "DCT"
     else:
         # Split into lists
         origpoints = route.split(' ')
         newpoints = newroute.split(' ')
         # Choose how many of the first items to swap
-        elemstoswap = random.randint(1,3)
+        elemstoswap = random.randint(1, 3)
         # Replace first X elements with those in other route
         origpoints[0:elemstoswap] = newpoints[0:elemstoswap]
         # Turn into one string again
         newroute = ' '.join(origpoints)
     print("Mangled "+route[:15]+"... -> "+newroute[:15]+"...")
     return newroute
+
 
 def mangledest(dest):
     # Keep first letter, we'll go easy on 'em
@@ -145,17 +153,19 @@ def mangledest(dest):
     print("Mangled "+dest+" -> "+shuffled)
     return shuffled
 
+
 def rndeqpcode():
     # List of valid codes... we'll go easy on 'em
-    validcodes = ['H','W','Z','L','X','T','U','D','B','A','M','N','P','Y','C','I','V','S','G']
+    validcodes = ['H', 'W', 'Z', 'L', 'X', 'T', 'U', 'D', 'B', 'A', 'M', 'N', 'P', 'Y', 'C', 'I', 'V', 'S', 'G']
     # 50/50 chance to just leave it blank
-    isblank = random.randint(0,1)
+    isblank = random.randint(0, 1)
     if isblank:
         thiscode = ""
     else:
         # Choose a random code
         thiscode = "/"+random.choice(validcodes)
     return thiscode
+
 
 def splittype(type):
     fields = type.split('/')
@@ -174,6 +184,7 @@ def splittype(type):
 
     return [wt, type, ec]
 
+
 def mangleec(type):
     # Get item after last / in type field
     typefields = splittype(type)
@@ -181,12 +192,12 @@ def mangleec(type):
     newwt = wt
     if wt:
         # print("Fount wt")
-        if random.randint(0,1):
+        if random.randint(0, 1):
             if wt == "T":
                 # print("Changing T to H")
                 newwt = "H/"
             elif wt == "H":
-                if random.randint(0,1):
+                if random.randint(0, 1):
                     # print("Changing H to none")
                     newwt = ""
                 else:
@@ -195,8 +206,8 @@ def mangleec(type):
         else:
             newwt = wt+"/"
     else:
-        if random.randint(0,1):
-            if random.randint(0,1):
+        if random.randint(0, 1):
+            if random.randint(0, 1):
                 newwt = "T/"
             else:
                 newwt = "H/"
@@ -212,6 +223,7 @@ def mangleec(type):
 
     return type
 
+
 def manglefp(fp):
     # Main function for introducing errors
     # Chance out of 1 for breaking each item
@@ -221,38 +233,40 @@ def manglefp(fp):
     chance_route = 0.25
 
     # Break items that meet a random roll
-    if random.randint(0,100) < chance_ec*100:
+    if random.randint(0, 100) < chance_ec*100:
         fp['planned_aircraft'] = mangleec(fp['planned_aircraft'])
-    if random.randint(0,100) < chance_alt*100:
+    if random.randint(0, 100) < chance_alt*100:
         fp['planned_altitude'] = manglealt(fp['planned_altitude'])
-    if random.randint(0,100) < chance_dest*100:
+    if random.randint(0, 100) < chance_dest*100:
         fp['planned_destairport'] = mangledest(fp['planned_destairport'])
-    if random.randint(0,100) < chance_route*100:
-        fp['planned_route'] = mangleroute(fp['planned_depairport'],fp['planned_route'])
+    if random.randint(0, 100) < chance_route*100:
+        fp['planned_route'] = mangleroute(fp['planned_depairport'], fp['planned_route'])
 
     return fp
 
-def cosinedist(latlon1,latlon2): #Use cosine to find distance between coordinates
+
+def cosinedist(latlon1, latlon2):  # Use cosine to find distance between coordinates
     lat1, lon1 = latlon1
     lat2, lon2 = latlon2
     phi1 = math.radians(lat1)
     phi2 = math.radians(lat2)
     dellamb = math.radians(lon2-lon1)
-    R = 3440.06479 # Nmi
+    R = 3440.06479  # Nmi
     # gives d in Nmi
-    d = math.acos( math.sin(phi1)*math.sin(phi2) + math.cos(phi1)*math.cos(phi2) * math.cos(dellamb) ) * R
+    d = math.acos(math.sin(phi1)*math.sin(phi2) + math.cos(phi1)*math.cos(phi2) * math.cos(dellamb)) * R
     return int(round(d))
+
 
 # Path to airport file for locations of parking spots
 aptfilepath = Path(sys.argv[1])
 outfile = Path(sys.argv[2])
 # Holds list of spots
-parkingspots=[]
+parkingspots = []
 fieldelev = 0
 
 # Coordinates of airport to filter parking spots
 # TODO: Look this up somehow
-coords = [45.5887089,-122.5968694]
+coords = [45.5887089, -122.5968694]
 
 # Get list of parking spots to use
 with open(aptfilepath, "r") as aptfile:
@@ -261,7 +275,7 @@ with open(aptfilepath, "r") as aptfile:
         line = line.strip()
         if name:
             # Last line was header, save the coordinates and name
-            spotcoords = [ float(i) for i in line.split(' ') ]
+            spotcoords = [float(i) for i in line.split(' ')]
             # Only keep if it's at this airport
             dist = cosinedist(coords, spotcoords)
             if dist < 3:
@@ -303,9 +317,9 @@ gaspots = iter(gaspotshuff)
 cargospots = iter(cargospotshuff)
 otherspots = iter(otherspotshuff)
 
-cargoairlines = ["FDX","UPS","GEC","GTI","ATI","DHL","BOX","CLX","ABW","SQC","ABX","AEG","AJT","CLU","BDA","DAE","DHK","JOS","RTM","DHX","BCS","CKS","MPH","NCA","PAC","TAY","RCF","CAO","TPA","CKK","MSX","LCO","SHQ","LTG","ADB"]
+cargoairlines = ["FDX", "UPS", "GEC", "GTI", "ATI", "DHL", "BOX", "CLX", "ABW", "SQC", "ABX", "AEG", "AJT", "CLU", "BDA", "DAE", "DHK", "JOS", "RTM", "DHX", "BCS", "CKS", "MPH", "NCA", "PAC", "TAY", "RCF", "CAO", "TPA", "CKK", "MSX", "LCO", "SHQ", "LTG", "ADB"]
 
-gaaircraft = ["C172","C182","PC12","C208","PA28","BE35"]
+gaaircraft = ["C172", "C182", "PC12", "C208", "PA28", "BE35"]
 
 # Get list of flight plans to use in random order
 shuffledfps = getfplist("KPDX")
