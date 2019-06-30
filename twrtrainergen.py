@@ -83,12 +83,12 @@ def getfplist(airport):
     ret = cur.execute('SELECT * FROM flights WHERE planned_depairport = %s', (airport,))
     print("Found "+str(ret)+" rows:")
     for match in cur.fetchall():
-    	#print(match)
-    	client = {}
-    	for key, val in zip(keys, match):
-    		#print(key+" = "+str(val))
-    		client[key] = str(val)
-    	flightplanlist.append(client)
+        #print(match)
+        client = {}
+        for key, val in zip(keys, match):
+            #print(key+" = "+str(val))
+            client[key] = str(val)
+        flightplanlist.append(client)
     return flightplanlist
 
 def randomfp(airport):
@@ -97,6 +97,10 @@ def randomfp(airport):
     return random.choice(fplist)
 
 def manglealt(alt):
+    if alt[:2] == "FL":
+        alt = int(alt[2:])*100
+    elif alt[:1] == "F":
+        alt = int(alt[1:])*100
     # 1/3 chance to remove/add 1000 feet or do nothing
     newalt = str(int(alt)+1000*random.randint(-1,1))
     print("Mangled "+alt+" -> "+newalt)
@@ -155,6 +159,7 @@ def rndeqpcode():
 
 def splittype(type):
     fields = type.split('/')
+    print("Split "+type+" -> "+str(fields))
     wt = ""
     ec = ""
     if len(fields[0]) == 1:
@@ -175,14 +180,26 @@ def mangleec(type):
     wt = typefields[0]
     newwt = wt
     if wt:
+        # print("Fount wt")
         if random.randint(0,1):
             if wt == "T":
+                # print("Changing T to H")
                 newwt = "H/"
             elif wt == "H":
                 if random.randint(0,1):
+                    # print("Changing H to none")
                     newwt = ""
                 else:
+                    # print("Changing H to T")
                     newwt = "T/"
+        else:
+            newwt = wt+"/"
+    else:
+        if random.randint(0,1):
+            if random.randint(0,1):
+                newwt = "T/"
+            else:
+                newwt = "H/"
     ec = typefields[2]
     newec = ec
     # If it's a single char, assume it's an eqp code
@@ -297,7 +314,7 @@ flightplans = iter(shuffledfps)
 
 while True:
     # Wait for input
-    number = input("Press button, receive airplane...")
+    number = input("\nPress button, receive airplane...")
     if number:
         try:
             actoadd = int(number)
