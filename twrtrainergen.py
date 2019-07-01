@@ -103,6 +103,7 @@ def randomfp(airport):
 
 
 def manglealt(alt):
+    # Catch cases with letters
     if alt[:2] == "FL":
         alt = int(alt[2:])*100
     elif alt[:1] == "F":
@@ -114,20 +115,20 @@ def manglealt(alt):
 
 
 def mangleroute(airport, route):
-    # Chance of just swapping with another route
+    # Chance of swapping entire route
     chance_swap = 0.1
     # Chance of just filing DCT
     chance_dct = 0.1
-    roll = random.randint(0, 100)
     # Get a new route to use for shenanigans
     newplan = randomfp(airport)
     newroute = newplan['planned_route']
-    if roll < chance_swap*100:
+    if random.randint(0, 100) < chance_swap*100:
         # Already have the new route to use
         pass
-    elif roll < (chance_swap+chance_dct)*100:
+    elif random.randint(0, 100) < chance_dct*100:
         newroute = "DCT"
     else:
+        # Just swap first few points
         # Split into lists
         origpoints = route.split(' ')
         newpoints = newroute.split(' ')
@@ -168,20 +169,29 @@ def rndeqpcode():
 
 
 def splittype(type):
+    # Splits type by / into weight, type, and eqp codes
+    # Anything not there returns a blank
     fields = type.split('/')
-    print("Split "+type+" -> "+str(fields))
+    # print("Split "+type+" -> "+str(fields))
+    # Blank by default
     wt = ""
     ec = ""
     if len(fields[0]) == 1:
-        wt = fields[0]
-        type = fields[1]
-        if len(fields) > 2:
-            ec = fields[2]
+        # Assume first field must be weight, followed by type
+        if len(fields) > 1:
+            wt = fields[0]
+            type = fields[1]
+            if len(fields) > 2:
+                # If there's another field, must be eqp code
+                ec = fields[2]
+        else:
+            type = fields[0]
     else:
+        # Assume first field must be type
         type = fields[0]
         if len(fields) > 1:
+            # If there's anothe field, must be eqp code
             ec = fields[1]
-
     return [wt, type, ec]
 
 
@@ -191,12 +201,14 @@ def mangleec(type):
     wt = typefields[0]
     newwt = wt
     if wt:
+        # If there's a weight, 50/50 we mess with it
         # print("Fount wt")
         if random.randint(0, 1):
             if wt == "T":
                 # print("Changing T to H")
                 newwt = "H/"
             elif wt == "H":
+                # If it's H, 50/50 either remove or change to T
                 if random.randint(0, 1):
                     # print("Changing H to none")
                     newwt = ""
@@ -204,9 +216,12 @@ def mangleec(type):
                     # print("Changing H to T")
                     newwt = "T/"
         else:
+            # Don't mess with it
             newwt = wt+"/"
     else:
+        # No weight, 50/50 we add something
         if random.randint(0, 1):
+            # 50/50 choice of T or H
             if random.randint(0, 1):
                 newwt = "T/"
             else:
@@ -257,6 +272,16 @@ def cosinedist(latlon1, latlon2):  # Use cosine to find distance between coordin
     return int(round(d))
 
 
+def loopiter(theiter, shuffled):
+    try:
+        newit = next(theiter)
+    except StopIteration:
+        # If we run out, start from beginning
+        theiter = iter(shuffled)
+        newit = next(theiter)
+    return newit
+
+
 # Path to airport file for locations of parking spots
 aptfilepath = Path(sys.argv[1])
 outfile = Path(sys.argv[2])
@@ -286,10 +311,14 @@ with open(aptfilepath, "r") as aptfile:
         else:
             # Not looking at a parking spot
             name = ""
-            # See if this is field elevation
-            if line[:16] == "field elevation=":
+            definition = line.split("=")
+            # See if this is a field we care about
+            if definition[0] == "field elevation":
                 # Save this to put new aircraft on ground
-                fieldelev = line[16:]
+                fieldelev = definition[1]
+            elif definition[0] == "icao":
+                # Save this to know what airport we're at
+                airport = definition[1]
 
 # Randomize the order of parking spots
 # Script will use them in order so hopefully we don't place them on top of each other
@@ -297,44 +326,70 @@ random.shuffle(parkingspots)
 print(parkingspots)
 parkingspots = iter(parkingspots)
 
-# TODO: split into term, cargo, GA, and choose accordingly
+# Allow splitting into term, cargo, GA, and choose accordingly
 gaspotshuff = []
 cargospotshuff = []
+milspotshuff = []
 otherspotshuff = []
+# Try to identify spots based on name
 for spot in parkingspots:
     if re.search("GA", spot[0]) is not None:
         gaspotshuff.append(spot)
     elif re.search("CARGO", spot[0]) is not None:
         cargospotshuff.append(spot)
+    elif re.search("ANG", spot[0]) is not None:
+        milspotshuff.append(spot)
     else:
         otherspotshuff.append(spot)
+print("GA: "+str(len(gaspotshuff))+"   CG: "+str(len(cargospotshuff))+"   MI: "+str(len(milspotshuff))+"   TR: "+str(len(otherspotshuff)))
 
-print("GA: "+str(len(gaspotshuff))+"   CG: "+str(len(cargospotshuff))+"   TR: "+str(len(otherspotshuff)))
+# Shuffle and create iterables
 random.shuffle(gaspotshuff)
 random.shuffle(cargospotshuff)
+random.shuffle(milspotshuff)
 random.shuffle(otherspotshuff)
 gaspots = iter(gaspotshuff)
 cargospots = iter(cargospotshuff)
+milspots = iter(milspotshuff)
 otherspots = iter(otherspotshuff)
 
+# Airlines to put on cargo ramps
 cargoairlines = ["FDX", "UPS", "GEC", "GTI", "ATI", "DHL", "BOX", "CLX", "ABW", "SQC", "ABX", "AEG", "AJT", "CLU", "BDA", "DAE", "DHK", "JOS", "RTM", "DHX", "BCS", "CKS", "MPH", "NCA", "PAC", "TAY", "RCF", "CAO", "TPA", "CKK", "MSX", "LCO", "SHQ", "LTG", "ADB"]
 
-gaaircraft = ["C172", "C182", "PC12", "C208", "PA28", "BE35"]
+# For aircraft not listed, would rather have GA at term than airliner at GA
+gaaircraft = ["C172", "C182", "PC12", "C208", "PA28", "BE35", "B350", "FA20", "C750", "CL30", "C25", "BE58", "BE9L", "HAWK", "C150", "P06T", "H25B", "TBM7", "P28U", "BE33", "AC11", "DHC6", "EA50", "SF50", "C510", "M7", "DC3", "UH1", "E55P", "TBM9", "PC21", "C25A", "B58T", "H850", "BE20", "DA42", "S76", "Z50", "A139", "C206", "AC50", "EPIC", "LJ45", "LJ60", "C404", "FA50", "C170", "GLF5", "C210", "FA7X", "DA62", "DR40", "P28A", "KODI", "SR22", "SR20", "P28B", "C550", "B36T", "DHC3", "DHC2", "GLEX", "B60T", "PC7", "E50P", "DA40", "AS50", "PA24", "C152", "ULAC", "BE30", "S550", "E300", "PA22", "J3", "B24", "B25", "B29", "B17", "PC6T", "T210", "BE36", "BE56", "P28R", "F406", "T51", "ST75", "CL60", "GL5T", "LJ24", "LJ25", "LJ31", "LJ40", "LJ55", "LJ75", "P38", "L10", "L12", "L29B", "L29A", "L14", "P2", "L37", "F2TH", "F900", "MYS4", "FA10", "DA50", "DJET", "PA25", "E200", "E230", "E400", "E500", "AS32", "AS3B", "AS55", "AS65", "EC45", "EC20", "EC30", "EC35", "EC55", "EC25", "TIGR", "BK17", "B412", "B06", "B205", "B212", "B222", "B230", "B407", "B427", "B430", "B47G", "A109", "A119", "A129", "B06T", "C421", "BE60", "TBM8", "PA31", "D401"]
+
+# Try to put mil aircraft at mil spots, if avail
+milaircraft = ["F35", "T38", "F15", "F14", "F22", "F18", "A10", "F4", "C130", "B52", "B1", "B2", "CV22", "MV22", "V22", "H60", "CH47", "CH55", "C5", "C17", "C141", "EA6B", "A6", "P8", "P3", "P3C", "E3", "E3CF", "E3TF", "C97", "E6", "K35A", "K35E", "K35R", "KE3", "R135", "HAR", "E2", "C2", "B58", "EUFI", "SU11", "SU15", "SU17", "SU20", "SU22", "SU24", "SU25", "SU35", "SU30", "SU32", "SU34", "SU27", "MG29", "MG31", "E767", "U2", "SR71", "A4", "RQ1", "MQ9", "CH60", "H64", "H46", "H47", "H66", "F104", "F117", "VF35", "S3", "T33", "A7", "F8", "MIR2", "MIRA", "MIR4", "MRF1", "RFAL", "ETAR", "SMB2", "AJET", "F106", "F101", "MG21"]
 
 # Get list of flight plans to use in random order
-shuffledfps = getfplist("KPDX")
+# Only add unique callsigns, otherwise random could add dupes
+# First get list from this airport
+shuffledfps = getfplist(airport)
+# Shuffle them
 random.shuffle(shuffledfps)
-flightplans = iter(shuffledfps)
+# Get a list of unique callsigns
+uniquecallsigns = list(set([i['callsign'] for i in shuffledfps]))
+filteredfps = []
+for fp in shuffledfps:
+    if fp['callsign'] in uniquecallsigns:
+        # If it's still in the list of callsigns, add to our filtered list
+        filteredfps.append(fp)
+        # Remove from the list of uniques so no more plans get added for that callsign
+        uniquecallsigns.remove(fp['callsign'])
+flightplans = iter(filteredfps)
 
 while True:
     # Wait for input
     number = input("\nPress button, receive airplane...")
+    # If we get a valid number as input, add that many airplanes
     if number:
         try:
             actoadd = int(number)
         except (TypeError, ValueError):
             actoadd = 1
     else:
+        # If we don't recognize it, just add one
         actoadd = 1
     # Loop through list of flight plans
     thesefps = []
@@ -343,31 +398,23 @@ while True:
         try:
             newfp = next(flightplans)
         except StopIteration:
+            # If we run out, start from beginning
             flightplans = iter(shuffledfps)
             newfp = next(flightplans)
         # Add errors to flight plan
         thesefps.append(manglefp(newfp))
-        # Loop through parking spots
+        # Pull first three chars for airline name
         airline = newfp['callsign'][:3]
         aircraft = splittype(newfp['planned_aircraft'])[1]
-        if airline in cargoairlines:
-            try:
-                nextspot = next(cargospots)
-            except StopIteration:
-                cargospots = iter(cargospotshuff)
-                nextspot = next(cargospots)
-        elif aircraft in gaaircraft:
-            try:
-                nextspot = next(gaspots)
-            except StopIteration:
-                gaspots = iter(gaspotshuff)
-                nextspot = next(gaspots)
+        # Loop through parking spots
+        if airline in cargoairlines and cargospots:
+            nextspot = loopiter(cargospots, cargospotshuff)
+        elif aircraft in gaaircraft and gaspots:
+            nextspot = loopiter(gaspots, gaspotshuff)
+        elif aircraft in milaircraft and milspots:
+            nextspot = loopiter(milspots, milspotshuff)
         else:
-            try:
-                nextspot = next(otherspots)
-            except StopIteration:
-                otherspots = iter(otherspotshuff)
-                nextspot = next(otherspots)
+            nextspot = loopiter(otherspots, otherspotshuff)
         # try:
             # nextspot = next(parkingspots)
         # except StopIteration:
