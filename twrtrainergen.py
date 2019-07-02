@@ -69,17 +69,7 @@ def getrndmode():
 
 
 def getfplist(airport):
-    print("Making mysql connection...")
-    db = MySQLdb.connect(host="",    # your host, usually localhost
-                         user="",         # your username
-                         passwd="",  # your password
-                         db="")        # name of the data base
-    db.set_character_set('utf8')
-    cur = db.cursor()
-    cur.execute('SET NAMES utf8;')
-    cur.execute('SET CHARACTER SET utf8;')
-    cur.execute('SET character_set_connection=utf8;')
-
+    cur = getdbcursor_mysql()
     keys = ["callsign", "cid", "realname", "clienttype", "frequency", "latitude", "longitude", "altitude", "groundspeed", "planned_aircraft", "planned_tascruise", "planned_depairport", "planned_altitude", "planned_destairport", "server", "protrevision", "rating", "transponder", "facilitytype", "visualrange", "planned_revision", "planned_flighttype", "planned_deptime", "planned_actdeptime", "planned_hrsenroute", "planned_minenroute", "planned_hrsfuel", "planned_minfuel", "planned_altairport", "planned_remarks", "planned_route", "planned_depairport_lat", "planned_depairport_lon", "planned_destairport_lat", "planned_destairport_lon", "atis_message", "time_last_atis_received", "time_logon", "heading", "QNH_iHg", "QNH_Mb"]
     flightplanlist = []
 
@@ -94,6 +84,34 @@ def getfplist(airport):
             client[key] = str(val)
         flightplanlist.append(client)
     return flightplanlist
+
+
+def getfplist_pickle(airport):
+    # Location of file with flight plans
+    fpfile = Path(r"C:\Users\lc224d\Documents\Scripts\KPDXdeps.pickle")
+    flightplanlist = pickle.load(open(fpfile, "rb"))
+    return flightplanlist
+
+
+def getdbcursor_sqlite():
+    fpfile = Path(r"")
+    conn=sqlite3.connect(filename)
+    c = conn.cursor()
+    return c
+
+
+def getdbcursor_mysql():
+    print("Making mysql connection...")
+    db = MySQLdb.connect(host="",    # your host, usually localhost
+                         user="",         # your username
+                         passwd="",  # your password
+                         db="")        # name of the data base
+    db.set_character_set('utf8')
+    cur = db.cursor()
+    cur.execute('SET NAMES utf8;')
+    cur.execute('SET CHARACTER SET utf8;')
+    cur.execute('SET character_set_connection=utf8;')
+    return cur
 
 
 def randomfp(airport):
