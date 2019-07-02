@@ -39,7 +39,10 @@ def fptoline(fp, spot, felev):
     # Add main elements from flight plan
     lit = [fp['callsign'], fp['planned_aircraft'], engine, fp['planned_flighttype'], fp['planned_depairport'], fp['planned_destairport'], fp['planned_altitude'], fp['planned_route'], fp['planned_remarks']]
     # Read transponder, set random mode
-    lit.extend([fp['transponder'], getrndmode()])
+    xpdr = fp['transponder']
+    if xpdr == "0":
+        xpdr = getrndsq()
+    lit.extend([xpdr, getrndmode()])
     # Coordinates of parking spot
     lit.extend([str(i) for i in spot[1]])
     # Field elevation
