@@ -4,10 +4,13 @@ import re
 import random
 import MySQLdb
 import pickle
+import sqlite3
 from enginetype import etype
 from pathlib import Path
 import math
 import sys
+from tkinter import Tk
+import os
 
 # Callsign:Type:Engine:Rules:Dep Field:Arr Field:Crz Alt:Route:Remarks:Sqk Code:Sqk Mode:Lat:Lon:Alt:Speed:Heading
 
@@ -50,7 +53,21 @@ def fptoline(fp, spot, felev):
     # Speed and heading
     lit.extend(["0", "360"])
     # print(lit)
+    string = "%s | %s | %s -> %s | %s | %s" % (fp['callsign'], fp['planned_aircraft'], fp['planned_depairport'], fp['planned_destairport'], fp['planned_altitude'], fp['planned_route'])
+    print(string)
+    addtoclipboard(string)
     return ":".join(lit)
+
+
+def addtoclipboard(string):
+    # r = Tk()
+    # r.withdraw()
+    # r.clipboard_clear()
+    # r.clipboard_append(string)
+    # r.update()
+    # r.destroy()
+    command = 'echo "' + string.strip() + '" | clip'
+    os.system(command)
 
 
 def getrndsq():
@@ -74,9 +91,8 @@ def getfplist(airport):
     # First need to get the database cursor
     conn = getdbconn_mysql()
     cur = conn.cursor()
-    keys = ["callsign", "cid", "realname", "clienttype", "frequency", "latitude", "longitude", "altitude", "groundspeed", "planned_aircraft", "planned_tascruise", "planned_depairport", "planned_altitude", "planned_destairport", "server", "protrevision", "rating", "transponder", "facilitytype", "visualrange", "planned_revision", "planned_flighttype", "planned_deptime", "planned_actdeptime", "planned_hrsenroute", "planned_minenroute", "planned_hrsfuel", "planned_minfuel", "planned_altairport", "planned_remarks", "planned_route", "planned_depairport_lat", "planned_depairport_lon", "planned_destairport_lat", "planned_destairport_lon", "atis_message", "time_last_atis_received", "time_logon", "heading", "QNH_iHg", "QNH_Mb"]
-    keys = cur.execute('SHOW COLUMNS FROM flights').fetchall()
-    
+    cur.execute('SHOW COLUMNS FROM flights')
+    keys = [i[0] for i in cur.fetchall()]
     flightplanlist = []
     print("Looking for matching rows at "+airport+"...")
     ret = cur.execute('SELECT * FROM flights WHERE planned_depairport = %s', (airport,))
@@ -120,7 +136,7 @@ def getdbconn_mysql():
     cur.execute('SET CHARACTER SET utf8;')
     cur.execute('SET character_set_connection=utf8;')
     return db
-    
+
 
 def randomfp(airport):
     # Should return a random flight plan object
@@ -283,7 +299,10 @@ def getlocations(fp):
     cur = conn.cursor()
     ret = cur.execute('SELECT latitude, longitude FROM flights WHERE callsign = %s AND time_logon = %s AND groundspeed = "0"', (fp['callsign'], fp['time_logon']))
     print("Found "+str(ret)+" total coordinates for "+fp['callsign'])
-    coords = cur.fetchall()
+    coords = []
+    for loc in cur.fetchall():
+        # print(loc)
+        coords.append([float(j) for j in loc])
     conn.close()
     return coords
 
@@ -302,7 +321,7 @@ def usespot(fp, spots):
             dists.append((spot, cosinedist(loc, spot[1])))
         # print(dists)
         # Sort the list by the distances
-        dsort = sorted(dists, key = lambda dist: dist[1])
+        dsort = sorted(dists, key=lambda dist: dist[1])
         # print(dsort)
         # If closest spot is within tolerance, return that spot
         if dsort[0][1] < 200/6076:
@@ -313,7 +332,7 @@ def usespot(fp, spots):
             print("Closest spot "+dsort[0][0][0]+" was "+str(round(dsort[0][1]*6076))+"ft away")
     # else:
         # print("GS "+fp['groundspeed']+" > 0")
-    
+
     return spotmatch
 
 
@@ -355,13 +374,24 @@ fieldelev = 0
 
 # Coordinates of airport to filter parking spots
 # TODO: Look this up somehow
-coords = [45.5887089, -122.5968694]
+aptcoords = {'KPDX': [45.5887089, -122.5968694],
+             'KSEA': [47.4498889, -122.3117778]
+             }
 
 # Get list of parking spots to use
 with open(aptfilepath, "r") as aptfile:
     name = ""
     for line in aptfile:
         line = line.strip()
+        definition = line.split("=")
+        # See if this is a field we care about
+        if definition[0] == "field elevation":
+            # Save this to put new aircraft on ground
+            fieldelev = definition[1]
+        elif definition[0] == "icao":
+            # Save this to know what airport we're at
+            airport = definition[1]
+            coords = aptcoords[airport]
         if name:
             # Last line was header, save the coordinates and name
             spotcoords = [float(i) for i in line.split(' ')]
@@ -375,14 +405,6 @@ with open(aptfilepath, "r") as aptfile:
         else:
             # Not looking at a parking spot
             name = ""
-            definition = line.split("=")
-            # See if this is a field we care about
-            if definition[0] == "field elevation":
-                # Save this to put new aircraft on ground
-                fieldelev = definition[1]
-            elif definition[0] == "icao":
-                # Save this to know what airport we're at
-                airport = definition[1]
 
 if len(parkingspots) == 0:
     raise RuntimeError("Didn't find any parking spots!")
