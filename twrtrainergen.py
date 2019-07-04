@@ -279,6 +279,11 @@ def manglefp(fp):
     chance_dest = 0.01
     chance_route = 0.25
 
+    chance_ec = 0.05
+    chance_alt = 0.05
+    chance_dest = 0.01
+    chance_route = 0.05
+
     # Break items that meet a random roll
     if random.randint(0, 100) < chance_ec*100:
         fp['planned_aircraft'] = mangleec(fp['planned_aircraft'])
