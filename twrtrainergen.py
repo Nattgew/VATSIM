@@ -12,25 +12,24 @@ import sys
 from tkinter import Tk
 import os
 
-# Callsign:Type:Engine:Rules:Dep Field:Arr Field:Crz Alt:Route:Remarks:Sqk Code:Sqk Mode:Lat:Lon:Alt:Speed:Heading
 
-
-def makeairfile(fps, spots, felev, outfile):
+def makeairfile(acs, felev, outfile):
     # Write a new air file with these values
     # outfile = Path(r"")
     with open(outfile, "w") as airfile:
-        for fp, spot in zip(fps, spots):
-            print("Adding "+fp['callsign']+" to "+spot[0])
+        for ac in acs:
+            print("Adding "+ac[0]['callsign']+" to "+ac[1][0])
             # Get the line in the right syntax from the flight plan
-            fpline = fptoline(fp, spot, felev)
+            fpline = fptoline(ac, felev)
             # Write the line to the file
             airfile.write(fpline+"\n")
 
 
-def fptoline(fp, spot, felev):
+def fptoline(ac, felev):
     # Takes flight plan object and returns line for air file
+    # Callsign:Type:Engine:Rules:Dep Field:Arr Field:Crz Alt:Route:Remarks:Sqk Code:Sqk Mode:Lat:Lon:Alt:Speed:Heading
     # Set the engine type
-    type = splittype(fp['planned_aircraft'])[1]
+    type = splittype(ac[0]['planned_aircraft'])[1]
     try:
         # See if it's in our list
         engine = etype[type.upper()]
@@ -40,21 +39,23 @@ def fptoline(fp, spot, felev):
         engine = "J"
     # TODO: find a better way to do this
     # Add main elements from flight plan
-    lit = [fp['callsign'], fp['planned_aircraft'], engine, fp['planned_flighttype'], fp['planned_depairport'], fp['planned_destairport'], fp['planned_altitude'], fp['planned_route'], fp['planned_remarks']]
+    lit = [ac[0]['callsign'], ac[0]['planned_aircraft'], engine, ac[0]['planned_flighttype'], ac[0]['planned_depairport'], ac[0]['planned_destairport'], ac[0]['planned_altitude'], ac[0]['planned_route'], ac[0]['planned_remarks']]
     # Read transponder, set random mode
-    xpdr = fp['transponder']
+    xpdr = ac[0]['transponder']
     if xpdr == "0":
         xpdr = getrndsq()
     lit.extend([xpdr, getrndmode()])
     # Coordinates of parking spot
-    lit.extend([str(i) for i in spot[1]])
+    lit.extend([str(i) for i in ac[1][1]])
     # Field elevation
     lit.append(felev)
     # Speed and heading
     lit.extend(["0", "360"])
     # print(lit)
-    string = "%s | %s | %s -> %s | %s | %s" % (fp['callsign'], fp['planned_aircraft'], fp['planned_depairport'], fp['planned_destairport'], fp['planned_altitude'], fp['planned_route'])
+    # Print out a string for each flight plan's main details
+    string = "%s | %s | %s -> %s | %s | %s" % (ac[0]['callsign'], ac[0]['planned_aircraft'], ac[0]['planned_depairport'], ac[0]['planned_destairport'], ac[0]['planned_altitude'], ac[0]['planned_route'])
     print(string)
+    # Automatically copy to clipboard
     addtoclipboard(string)
     return ":".join(lit)
 
@@ -71,9 +72,10 @@ def addtoclipboard(string):
 
 
 def getrndsq():
-    # Gives a random squawk code
+    # Gives a random squawk code (string)
     print("Generating random squawk...")
     sq = ""
+    # Avoid special codes... for now
     while sq in ["", "7500", "7600", "7700"]:
         for i in range(4):
             sq += str(random.randint(0, 7))
@@ -94,9 +96,9 @@ def getfplist(airport):
     cur.execute('SHOW COLUMNS FROM flights')
     keys = [i[0] for i in cur.fetchall()]
     flightplanlist = []
-    print("Looking for matching rows at "+airport+"...")
+    # print("Looking for matching rows at "+airport+"...")
     ret = cur.execute('SELECT * FROM flights WHERE planned_depairport = %s', (airport,))
-    print("Found "+str(ret)+" rows:")
+    # print("Found "+str(ret)+" rows:")
     for match in cur.fetchall():
         # print(match)
         client = {}
@@ -125,7 +127,7 @@ def getdbconn_sqlite():
 
 def getdbconn_mysql():
     # Return database cursor for mysql server
-    print("Making mysql connection...")
+    # print("Making mysql connection...")
     db = MySQLdb.connect(host="",    # your host, usually localhost
                          user="",         # your username
                          passwd="",  # your password
@@ -179,8 +181,8 @@ def mangleroute(airport, route):
     else:
         # Just swap first few points
         # Split into lists
-        origpoints = route.split(' ')
-        newpoints = newroute.split(' ')
+        origpoints = re.split(' |\.', route)
+        newpoints = re.split(' |\.', newroute)
         # Choose how many of the first items to swap
         elemstoswap = random.randint(1, 4)
         # Replace first X elements with those in other route
@@ -271,18 +273,21 @@ def mangleec(type):
     return newtype
 
 
-def manglefp(fp):
+def manglefp(fp, focus=None):
     # Main function for introducing errors
     # Chance out of 1 for breaking each item
-    chance_ec = 0.5
-    chance_alt = 0.25
-    chance_dest = 0.01
-    chance_route = 0.25
-
-    chance_ec = 0.05
-    chance_alt = 0.05
-    chance_dest = 0.01
-    chance_route = 0.05
+    if focus == "TWR":
+        # If focus on TWR, rely on pilots to provide the errors
+        chance_ec = 0.01
+        chance_alt = 0.01
+        chance_dest = 0.001
+        chance_route = 0.01
+    else:
+        # If focus is on GND, add errors to enhance training
+        chance_ec = 0.5
+        chance_alt = 0.25
+        chance_dest = 0.01
+        chance_route = 0.25
 
     # Break items that meet a random roll
     if random.randint(0, 100) < chance_ec*100:
@@ -299,7 +304,7 @@ def manglefp(fp):
 
 def getlocations(fp):
     # Return list of coordinates where this client was seen stationary
-    print("Getting locations for this client...")
+    # print("Getting locations for this client...")
     conn = getdbconn_mysql()
     cur = conn.cursor()
     ret = cur.execute('SELECT latitude, longitude FROM flights WHERE callsign = %s AND time_logon = %s AND groundspeed = "0"', (fp['callsign'], fp['time_logon']))
@@ -440,14 +445,17 @@ random.shuffle(cargospots)
 random.shuffle(milspots)
 random.shuffle(otherspots)
 
+# Keep track of recently used spots
+usedspots = []
+
 # Airlines to put on cargo ramps
 cargoairlines = ["FDX", "UPS", "GEC", "GTI", "ATI", "DHL", "BOX", "CLX", "ABW", "SQC", "ABX", "AEG", "AJT", "CLU", "BDA", "DAE", "DHK", "JOS", "RTM", "DHX", "BCS", "CKS", "MPH", "NCA", "PAC", "TAY", "RCF", "CAO", "TPA", "CKK", "MSX", "LCO", "SHQ", "LTG", "ADB"]
 
 # For aircraft not listed, would rather have GA at term than airliner at GA
-gaaircraft = ["C172", "C182", "PC12", "C208", "PA28", "BE35", "B350", "FA20", "C750", "CL30", "C25", "BE58", "BE9L", "HAWK", "C150", "P06T", "H25B", "TBM7", "P28U", "BE33", "AC11", "DHC6", "EA50", "SF50", "C510", "M7", "DC3", "UH1", "E55P", "TBM9", "PC21", "C25A", "B58T", "H850", "BE20", "DA42", "S76", "Z50", "A139", "C206", "AC50", "EPIC", "LJ45", "LJ60", "C404", "FA50", "C170", "GLF5", "C210", "FA7X", "DA62", "DR40", "P28A", "KODI", "SR22", "SR20", "P28B", "C550", "B36T", "DHC3", "DHC2", "GLEX", "B60T", "PC7", "E50P", "DA40", "AS50", "PA24", "C152", "ULAC", "BE30", "S550", "E300", "PA22", "J3", "B24", "B25", "B29", "B17", "PC6T", "T210", "BE36", "BE56", "P28R", "F406", "T51", "ST75", "CL60", "GL5T", "LJ24", "LJ25", "LJ31", "LJ40", "LJ55", "LJ75", "P38", "L10", "L12", "L29B", "L29A", "L14", "P2", "L37", "F2TH", "F900", "MYS4", "FA10", "DA50", "DJET", "PA25", "E200", "E230", "E400", "E500", "AS32", "AS3B", "AS55", "AS65", "EC45", "EC20", "EC30", "EC35", "EC55", "EC25", "TIGR", "BK17", "B412", "B06", "B205", "B212", "B222", "B230", "B407", "B427", "B430", "B47G", "A109", "A119", "A129", "B06T", "C421", "BE60", "TBM8", "PA31", "D401", "C500", "PA18", "R22", "R44", "C525", "PAY1", "PAY2", "PA30", "PRM1", "R66", "AEST", "EH10", "PA11", "BE18", "SIRA", "PA32", "M20P", "M20J", "C441", "B609", "LEG2", "BT36", "YK40", "TOBA", "BE55", "PZ04", "WT9", "L39", "C310", "PA20", "C56X", "E550", "CL35", "P180", "BE40", "YK18", "M20T", "PV1", "SH36", "P51", "T6", "SPIT", "C207", "PA28R", "A5", "PA34", "CHIN", "GL7T", "S92"]
+gaaircraft = ["C172", "C182", "PC12", "C208", "PA28", "BE35", "B350", "FA20", "C750", "CL30", "C25", "BE58", "BE9L", "HAWK", "C150", "P06T", "H25B", "TBM7", "P28U", "BE33", "AC11", "DHC6", "EA50", "SF50", "C510", "M7", "DC3", "UH1", "E55P", "TBM9", "PC21", "C25A", "B58T", "H850", "BE20", "DA42", "S76", "Z50", "A139", "C206", "AC50", "EPIC", "LJ45", "LJ60", "C404", "FA50", "C170", "GLF5", "C210", "FA7X", "DA62", "DR40", "P28A", "KODI", "SR22", "SR20", "P28B", "C550", "B36T", "DHC3", "DHC2", "GLEX", "B60T", "PC7", "E50P", "DA40", "AS50", "PA24", "C152", "ULAC", "BE30", "S550", "E300", "PA22", "J3", "B24", "B25", "B29", "B17", "PC6T", "T210", "BE36", "BE56", "P28R", "F406", "T51", "ST75", "CL60", "GL5T", "LJ24", "LJ25", "LJ31", "LJ40", "LJ55", "LJ75", "P38", "L10", "L12", "L29B", "L29A", "L14", "P2", "L37", "F2TH", "F900", "MYS4", "FA10", "DA50", "DJET", "PA25", "E200", "E230", "E400", "E500", "AS32", "AS3B", "AS55", "AS65", "EC45", "EC20", "EC30", "EC35", "EC55", "EC25", "TIGR", "BK17", "B412", "B06", "B205", "B212", "B222", "B230", "B407", "B427", "B430", "B47G", "A109", "A119", "A129", "B06T", "C421", "BE60", "TBM8", "PA31", "D401", "C500", "PA18", "R22", "R44", "C525", "PAY1", "PAY2", "PA30", "PRM1", "R66", "AEST", "EH10", "PA11", "BE18", "SIRA", "PA32", "M20P", "M20J", "C441", "B609", "LEG2", "BT36", "YK40", "TOBA", "BE55", "PZ04", "WT9", "L39", "C310", "PA20", "C56X", "E550", "CL35", "P180", "BE40", "YK18", "M20T", "PV1", "SH36", "P51", "T6", "SPIT", "C207", "PA28R", "A5", "PA34", "CHIN", "GL7T", "S92", "COL4", "PA46", "B462", "P46T", "LANC", "RV8", "G21", "AC68", "B429", "BN2P", "LJ35", "PA27", "TRIN", "UNIV", "AC90", "C402", "AN12", "HA4T", "MI8", "AN2", "GIV", "GLF4", "GLF2", "GLF6", "A210", "CAT", "CDC6", "PA38", "DO28", "GA5C", "B461", "B18T", "P28S", "C46", "EXPL", "B200", "DH2T", "AS21", "C68A", "PAY4", "B463", "PC24"]
 
 # Try to put mil aircraft at mil spots
-milaircraft = ["F35", "T38", "F15", "F14", "F22", "F18", "A10", "F4", "C130", "B52", "B1", "B2", "CV22", "MV22", "V22", "H60", "CH47", "CH55", "C5", "C17", "C141", "EA6B", "A6", "P8", "P3", "P3C", "E3", "E3CF", "E3TF", "C97", "E6", "K35A", "K35E", "K35R", "KE3", "R135", "HAR", "E2", "C2", "B58", "EUFI", "SU11", "SU15", "SU17", "SU20", "SU22", "SU24", "SU25", "SU35", "SU30", "SU32", "SU34", "SU27", "MG29", "MG31", "E767", "U2", "SR71", "A4", "RQ1", "MQ9", "CH60", "H64", "H46", "H47", "H66", "F104", "F117", "VF35", "S3", "T33", "A7", "F8", "MIR2", "MIRA", "MIR4", "MRF1", "RFAL", "ETAR", "SMB2", "AJET", "F106", "F101", "MG21", "A400", "F18H", "VULC", "SUCO", "A50", "H53", "V35B", "C30J"]
+milaircraft = ["F35", "T38", "F15", "F14", "F22", "F18", "A10", "F4", "C130", "B52", "B1", "B2", "CV22", "MV22", "V22", "H60", "CH47", "CH55", "C5", "C17", "C141", "EA6B", "A6", "P8", "P3", "P3C", "E3", "E3CF", "E3TF", "C97", "E6", "K35A", "K35E", "K35R", "KE3", "R135", "HAR", "E2", "C2", "B58", "EUFI", "SU11", "SU15", "SU17", "SU20", "SU22", "SU24", "SU25", "SU35", "SU30", "SU32", "SU34", "SU27", "MG29", "MG31", "E767", "U2", "SR71", "A4", "RQ1", "MQ9", "CH60", "H64", "H46", "H47", "H66", "F104", "F117", "VF35", "S3", "T33", "A7", "F8", "MIR2", "MIRA", "MIR4", "MRF1", "RFAL", "ETAR", "SMB2", "AJET", "F106", "F101", "MG21", "A400", "F18H", "VULC", "SUCO", "A50", "H53", "V35B", "C30J", "MH60", "TEX2", "F35A"]
 
 # Get list of flight plans to use in random order
 # Only add unique callsigns, otherwise random could add dupes
@@ -467,9 +475,13 @@ for fp in shuffledfps:
         # Remove from the list of uniques so no more plans get added for that callsign
         uniquecallsigns.remove(fp['callsign'])
 flightplans = iter(filteredfps)
+print("Found "+str(len(shuffledfps))+" plans and "+str(len(filteredfps))+" callsigns")
 
 # Keep running until killed
 while True:
+    # Keep list of used spots to a reasonable 
+    if len(usedspots)>14:
+        usedspots = usedspots[1:]
     # Wait for input
     number = input("\nPress button, receive airplane...")
     # If we get a valid number as input, add that many airplanes
@@ -479,11 +491,11 @@ while True:
         except (TypeError, ValueError):
             actoadd = 1
     else:
-        # If we don't recognize it, just add one
+        # If we don't recognize number input, just add one
         actoadd = 1
-    thesefps = []
-    thesespots = []
-    # Creat as many aircraft as were requested
+    # List of aircraft and spots in this batch
+    theseacs = []
+    # Create as many aircraft as were requested
     for i in range(actoadd):
         try:
             newfp = next(flightplans)
@@ -492,23 +504,25 @@ while True:
             flightplans = iter(shuffledfps)
             newfp = next(flightplans)
         # Add errors to flight plan
-        thesefps.append(manglefp(newfp))
+        nextfp = manglefp(newfp)
         # Try to use original spot
         nextspot = usespot(newfp, parkingspots)
         if nextspot:
             # Further attention if we found a matching spot
-            for thislist in [cargospots, gaspots, milspots, otherspots]:
-                if nextspot in thislist:
-                    # If it's at the back of the list, consider it recently used
-                    # Just grab next spot in the same list instead
-                    # Could go with next nearest spot but that could jump to another list
-                    # TODO: loop through nearest spots in matching list?
-                    if nextspot in thislist[-int(len(thislist)*0.3):]:
-                        print("Too recent, picking from top")
+            # Could go with next nearest spot but that could jump to another list
+            # TODO: loop through nearest spots in matching list?
+            # See if it's been recently used
+            if nextspot in usedspots:
+                print("Too recent, picking from top")
+                # Find which list it's in and use the next spot in that list
+                for thislist in [cargospots, gaspots, milspots, otherspots]:
+                    if nextspot in thislist:
                         thislist, nextspot = loopiter(thislist)
-                    else:
-                        # Not too recently used, move this spot to end of its list
-                        print("Moving "+nextspot[0]+" to end of list")
+            else:
+                # Not too recently used, move this spot to end of its list
+                print("Moving "+nextspot[0]+" to end of list")
+                for thislist in [cargospots, gaspots, milspots, otherspots]:
+                    if nextspot in thislist:
                         thislist.remove(nextspot)
                         thislist.append(nextspot)
             # for thislist in [cargospots, gaspots, milspots, otherspots]:
@@ -517,7 +531,7 @@ while True:
             print("Using random spot")
             # Pull first three chars for airline name
             airline = newfp['callsign'][:3]
-            aircraft = splittype(newfp['planned_aircraft'])[1]
+            aircraft = splittype(newfp['planned_aircraft'])[1].strip()
             # Loop through parking spots
             if airline in cargoairlines and cargospots:
                 cargospots, nextspot = loopiter(cargospots)
@@ -532,6 +546,9 @@ while True:
             # except StopIteration:
                 # parkingspots = iter(parkingspots)
                 # nextspot = next(parkingspots)
-        thesespots.append(nextspot)
+        # Add the spot to the list of recently used
+        usedspots.append(nextspot)
+        # Add to list of aircraft in this batch
+        theseacs.append((nextfp, nextspot))
     # Save the file with aircraft in it
-    makeairfile(thesefps, thesespots, fieldelev, outfile)
+    makeairfile(theseacs, fieldelev, outfile)
