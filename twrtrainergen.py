@@ -18,7 +18,7 @@ def makeairfile(acs, felev, outfile):
     # outfile = Path(r"")
     with open(outfile, "w") as airfile:
         for ac in acs:
-            print("Adding "+ac[0]['callsign']+" to "+ac[1][0])
+            # print("Adding "+ac[0]['callsign']+" to "+ac[1][0])
             # Get the line in the right syntax from the flight plan
             fpline = fptoline(ac, felev)
             # Write the line to the file
@@ -53,7 +53,7 @@ def fptoline(ac, felev):
     lit.extend(["0", "360"])
     # print(lit)
     # Print out a string for each flight plan's main details
-    string = "%s | %s | %s -> %s | %s | %s" % (ac[0]['callsign'], ac[0]['planned_aircraft'], ac[0]['planned_depairport'], ac[0]['planned_destairport'], ac[0]['planned_altitude'], ac[0]['planned_route'])
+    string = "%s | %s %s | %s -> %s | %s | %s" % (ac[0]['callsign'], ac[0]['planned_aircraft'], ac[1][0], ac[0]['planned_depairport'], ac[0]['planned_destairport'], ac[0]['planned_altitude'], ac[0]['planned_route'])
     print(string)
     # Automatically copy to clipboard
     addtoclipboard(string)
@@ -73,7 +73,7 @@ def addtoclipboard(string):
 
 def getrndsq():
     # Gives a random squawk code (string)
-    print("Generating random squawk...")
+    # print("Generating random squawk...")
     sq = ""
     # Avoid special codes... for now
     while sq in ["", "7500", "7600", "7700"]:
@@ -308,7 +308,7 @@ def getlocations(fp):
     conn = getdbconn_mysql()
     cur = conn.cursor()
     ret = cur.execute('SELECT latitude, longitude FROM flights WHERE callsign = %s AND time_logon = %s AND groundspeed = "0"', (fp['callsign'], fp['time_logon']))
-    print("Found "+str(ret)+" total coordinates for "+fp['callsign'])
+    print("Found "+str(ret)+" total stationary coordinates for "+fp['callsign'])
     coords = []
     for loc in cur.fetchall():
         # print(loc)
@@ -339,7 +339,11 @@ def usespot(fp, spots):
             spotmatch = dsort[0][0]
             break
         else:
-            print("Closest spot "+dsort[0][0][0]+" was "+str(round(dsort[0][1]*6076))+"ft away")
+            if dsort[0][1]<0.5:
+                dstr = str(round(dsort[0][1]*6076))+"ft"
+            else:
+                dstr = str(round(dsort[0][1], ))+"nmi"
+            print("Closest spot "+dsort[0][0][0]+" was "+dstr+" away")
     # else:
         # print("GS "+fp['groundspeed']+" > 0")
 
@@ -479,7 +483,7 @@ print("Found "+str(len(shuffledfps))+" plans and "+str(len(filteredfps))+" calls
 
 # Keep running until killed
 while True:
-    # Keep list of used spots to a reasonable 
+    # Keep list of used spots to a reasonable length
     if len(usedspots)>14:
         usedspots = usedspots[1:]
     # Wait for input
@@ -520,7 +524,7 @@ while True:
                         thislist, nextspot = loopiter(thislist)
             else:
                 # Not too recently used, move this spot to end of its list
-                print("Moving "+nextspot[0]+" to end of list")
+                # print("Moving "+nextspot[0]+" to end of list")
                 for thislist in [cargospots, gaspots, milspots, otherspots]:
                     if nextspot in thislist:
                         thislist.remove(nextspot)
