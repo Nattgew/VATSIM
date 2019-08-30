@@ -19,7 +19,8 @@ def newclient(line):
     elems = line.split(':')
     for key, val in zip(keys, elems):
         client[key] = val
-
+    if client['clienttype'] == "":
+        client['clienttype'] = "PREFILE"
     return client
 
 encoding = "utf-8"
@@ -87,21 +88,24 @@ keys = ["callsign", "cid", "realname", "clienttype", "frequency", "latitude", "l
 cur.execute('START TRANSACTION')
 # Go through the current clients and find any we care about
 for client in clients:
-    # Use all the SQL you like
-    #print("Looking for cid: "+client['cid']+"   time: "+client['time_logon'])
-    cur.execute('SELECT COUNT(*) FROM flights WHERE cid = %s AND time_logon = %s', (client['cid'], client['time_logon']))
-    # print all the first cell of all the rows
-    exist = cur.fetchone()[0]
-    if not exist:
-        row = []
-        for key in keys:
-            row.append(client[key])
-#        print("Adding row len "+str(len(row))+":")
-        #print(row)
-        #print(tuple(client.values()))
-        cur.execute('INSERT INTO flights VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)', row)
-    #else:
-        #print("X")
+    if client['clienttype'] in ["PILOT","PREFILE"]:
+        #print("Looking for cid: "+client['cid']+"   time: "+client['time_logon'])
+        if client['clienttype'] == "PILOT":
+            cur.execute('SELECT COUNT(*) FROM flights WHERE cid = %s AND time_logon = %s and planned_revision = %s', (client['cid'], client['time_logon'], client['planned_revision']))
+        elif client['clienttype'] == "PREFILE":
+            cur.execute('SELECT COUNT(*) FROM flights WHERE cid = %s AND planned_route = %s', (client['cid'], client['planned_route']))
+        # print all the first cell of all the rows
+        exist = cur.fetchone()[0]
+        if not exist:
+            row = []
+            for key in keys:
+                row.append(client[key])
+#            print("Adding row len "+str(len(row))+":")
+            #print(row)
+            #print(tuple(client.values()))
+            cur.execute('INSERT INTO flights VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)', row)
+        #else:
+            #print("X")
 
 db.commit()
 db.close()
