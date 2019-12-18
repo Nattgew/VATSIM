@@ -4,6 +4,10 @@ ini_set('display_errors', 1);
 ini_set('display_startup_errors', 1);
 error_reporting(E_ALL);
 
+include_once 'logdbconfig.php';
+//TODO: Database with airport locations
+include_once 'locdbconfig.php';
+
 //https://www.php.net/manual/en/function.array-unique.php#116302
 function unique_multidim_array($array, $key) {
     $temp_array = array();
@@ -74,23 +78,33 @@ function getrndmode() {
   return $mode;
 }
 
-function getfplist(string $airport) {
-  // MAKE DB CONNECTION
-  $sql = "SHOW COLUMNS FROM flights";
-
-  $flightplanlist = array();
-
-  $sql = "SELECT * FROM flights WHERE planned_depairport = ?";
-  $stmt = $mysqli->prepare($query);
-  $stmt->bind_param("s", $airport);
+function getfplist(string $icao) {
+  global $conn
+  $sql = "SELECT * FROM `flights` WHERE planned_depairport = ?";
+  $stmt = $conn->prepare($sql);
+  $stmt->bind_param("s", $icao);
   $stmt->execute();
+  $result = $stmt->get_result();
 
-  $coords = array();
-  foreach ($result as &$loc) {
+  $fps = array();
 
-  // CREATE LIST FROM RESULTS
+  if ($result->num_rows > 0) {
+    // output data of each row
+    while($row = $result->fetch_assoc()) {
+      $csign = $row["callsign"];
+      $actype = $row["planned_aircraft"];
+      $dest = $row["planned_destairport"];
+      $alt = $row["planned_altitude"];
+      $rules = $row["planned_flighttype"];
+      $rmks = $row["planned_remarks"];
+      $route = $row["planned_route"];
+      $fps[] = array("callsign" => $csign, "planned_aircraft" => $actype, "planned_destairport" => $dest, "planned_altitude" => $alt, "planned_flighttype" => $rules, "planned_remarks" => $rmks, "planned_route" => $route);
+    }
+  } else {
+    $class = "none";
+    $code = "none";
   }
-  return $flightplanlist;
+  return $fps;
 }
 
 function randomfp(string $airport) {
@@ -98,6 +112,7 @@ function randomfp(string $airport) {
   return array_rand($fplist);
 }
 
+//TODO: rework this based on route analyzer
 function manglealt(string $alt) {
   if (substr($alt,0,2) == "FL") {
     $newalt = int(substr($alt,3))*100;
@@ -106,7 +121,12 @@ function manglealt(string $alt) {
   } else {
     $newalt = int($alt);
   }
-  $newalt = (string) $newalt+1000*rand(-1,1);
+  if (rand(0,1) == 1) {
+    $roll = 1;
+  } else {
+    $roll = -1;
+  }
+  $newalt = (string) $newalt+1000*$roll;
   return $newalt;
 }
 
@@ -116,6 +136,7 @@ function mangleroute(string $airport, string $route) {
   $chance_dct = 0.05;
   $chance_blk = 0.05;
 
+  $mangletype = array(0, $route);
   $newplan = randomfp($airport);
   $newroute = newplan['planned_route'];
   if (rand(0,100) < $chance_swap*100) {
@@ -129,8 +150,9 @@ function mangleroute(string $airport, string $route) {
     $elemstoswap = rand(1,4);
     $mangledpoints = array_merge(array_slice($origpoints, 0, $elemstoswap), array_slice($newpoints, $elemstoswap));
     $newroute = implode(" ", $mangledpoints);
+    $mangletype = array($elemstoswap, $route);
   }
-  return $newroute;
+  return array($newroute, $mangletype);
 }
 
 function mangledest(string $dest) {
@@ -173,7 +195,7 @@ function splittype(string $type) {
   return array($wt, $type, $ec);
 }
 
-function mangleec($type) {
+function mangleec(string $type) {
   $typefields = splittype($type);
   $wt = $typefields[0];
   $newwt = $wt;
@@ -204,6 +226,19 @@ function mangleec($type) {
   $newtype = $newwt . $typefields[1] . $newec;
   return $newtype;
 }
+#keys = ["callsign", "cid", "realname", "clienttype", "frequency", "latitude", "longitude", "altitude", "groundspeed", "planned_aircraft", "planned_tascruise", "planned_depairport", "planned_altitude", "planned_destairport", "server", "protrevision", "rating", "transponder", "facilitytype", "visualrange", "planned_revision", "planned_flighttype", "planned_deptime", "planned_actdeptime", "planned_hrsenroute", "planned_minenroute", "planned_hrsfuel", "planned_minfuel", "planned_altairport", "planned_remarks", "planned_route", "planned_depairport_lat", "planned_depairport_lon", "planned_destairport_lat", "planned_destairport_lon", "atis_message", "time_last_atis_received", "time_logon", "heading", "QNH_iHg", "QNH_Mb"]
+
+function manglerules(string $rules) {
+  if ( $rules == "I" ) {
+    $rules = "V";
+  } else {
+    $rules = "I";
+  }
+  if (rand(0,100) < 2 ) {
+    $rules = "S";
+  }
+  return $rules;
+}
 
 function manglefp(string $fp, string $focus = "None") {
   // ADD WAY TO ADJUST THESE
@@ -212,39 +247,60 @@ function manglefp(string $fp, string $focus = "None") {
     $chance_alt = 0.01;
     $chance_dest = 0.001;
     $chance_route = 0.01;
+    $chance_rules = 0.01;
   } else {
     $chance_ec = 0.5;
     $chance_alt = 0.25;
     $chance_dest = 0.01;
     $chance_route = 0.25;
+    $chance_rules = 0.1;
   }
+  //Could also store the mangles themselves here
+  //type, alt, dest, route, rules
+  $mangled = array("", "", "", "", "");
   if (rand(0,100) < $chance_ec * 100) {
+    //TODO: specify which parts have been broken
+    $mangled[0] = $fp['planned_aircraft'];
     $fp['planned_aircraft'] = mangleec($fp['planned_aircraft']);
-
   }
   if (rand(0,100) < $chance_alt * 100) {
+    $mangled[1] = $fp['planned_altitude'];
     $fp['planned_altitude'] = manglealt($fp['planned_altitude']);
   }
   if (rand(0,100) < $chance_dest * 100) {
+    $mangled[2] = $fp['planned_destairport'];
     $fp['planned_destairport'] = mangledest($fp['planned_destairport']);
   }
   if (rand(0,100) < $chance_route * 100) {
-    $fp['planned_route'] = mangleroute($fp['planned_route']);
+    //$mangled[3] = $fp['planned_route'];
+    $mreturn = mangleroute($fp['planned_route']);
+    $fp['planned_route'] = $mreturn[0];
+    $mangled[3] = $mreturn[1];
   }
-  return $fp;
+  if (rand(0,100) < $chance_rules * 100) {
+    $mangled[4] = $fp['planned_flighttype'];
+    $fp['planned_flighttype'] = manglerules($fp['planned_flighttype']);
+  }
+  return array($fp, $mangled);
 }
 
 function getlocations(string $fp) {
-  // GET DB CONN
+  global $conn_l;
   $sql = "SELECT latitude, longitude FROM flights WHERE callsign = ? AND time_logon = ? AND groundspeed = '0'";
-  $stmt = $mysqli->prepare($query);
-  $stmt->bind_param("ss", fp['callsign'], fp['time_logon']);
+  $stmt = $conn_l->prepare($query);
+  $stmt->bind_param("ss", $fp['callsign'], $fp['time_logon']);
   $stmt->execute();
 
+  $result = $stmt->get_result();
+  
   $coords = array();
-  foreach ($result as &$loc) {
-    $coords[] = array(float($loc[0]),float($loc[1]));
+  
+  if($result->num_rows > 0) {
+    while ($loc = $result->fetch_assoc()) {
+      $coords[] = array(float($loc[0]),float($loc[1]));
+    }
   }
+  //$stmt->close();
   return $coords;
 }
 
@@ -285,6 +341,37 @@ function cosinedist(array $latlon1, array $latlon2) {
   return $d;
 }
 
+function inithdg($lat1,$lon1,$lat2,$lon2) { #Find heading between coordinates
+  $phi1 = deg2rad($lat1);
+  $phi2 = deg2rad($lat2;)
+  $lamb1 = deg2rad($lon1);
+  $lamb2 = deg2rad($lon2);
+  $y = sin($lamb2-$lamb1) * cos($phi2);
+  $x = cos($phi1)*sin($phi2) - sin($phi1)*cos($phi2)*cos($lamb2-$lamb1);
+  $brng = rad2deg(atan2($y, $x));
+  if ($brng<0) {
+    $brng = $brng + 360;
+  }
+  return $brng;
+}
+
+function aptcoords($icao) {
+  $sql = "SELECT latitude, longitude FROM airports WHERE icao = ?";
+  $stmt = $mysqli->prepare($query);
+  $stmt->bind_param("s", $icao);
+  $stmt->execute();
+  $result = $stmt->get_result();
+  
+  $coords = array();
+  
+  if($result->num_rows > 0) {
+    while ($loc = $result->fetch_assoc()) {
+      $coords = array(float($loc[0]),float($loc[1]));
+    }
+  }
+  return $coords;
+}
+
 //Read apt file to get parking spots
 $parkingspots = array();
 $gaspots = array();
@@ -295,6 +382,8 @@ $otherspots = array();
 $myfile = fopen("twrtrainer/".$icao.".apt", "r") or die("Unable to open file!");
 
 $name = "";
+$magvar = 0;
+$fieldelev = "0";
 while(! feof($myfile)) {
   $line = fgets($myfile);
   if ($name <> "") {
@@ -305,6 +394,11 @@ while(! feof($myfile)) {
     $name = substr($line, 9);
   } else {
     $name = "";
+    if (substr($line,0,18) == "magnetic variation=" ) {
+      $magvar = (int)substr($line,19);
+    } elseif (substr($line,0,15) == "field elevation=" ) {
+      $fieldelev = substr($line,16);
+    }
   }
 }
 
@@ -331,36 +425,13 @@ shuffle($cargospots);
 shuffle($milspots);
 shuffle($otherspots);
 
-include_once 'logdbconfig.php';
-
 //$sql = "SHOW COLUMNS FROM flights";
 //$result = $conn->query($sql);
 
-$sql = "SELECT * FROM `flights` WHERE planned_depairport ='".$icao."'";
-$result = $conn->query($sql);
-
-$fps = array();
-
-if ($result->num_rows > 0) {
-    // output data of each row
-    while($row = $result->fetch_assoc()) {
-        $csign = $row["callsign"];
-        $actype = $row["planned_aircraft"];
-        $dest = $row["planned_destairport"];
-        $alt = $row["planned_altitude"];
-        $rules = $row["planned_flighttype"];
-        $rmks = $row["planned_remarks"];
-        $route = $row["planned_route"];
-        $fps[] = array($csign, $actype, $dest, $alt, $rules, $rmks, $route);
-    }
-} else {
-    $class = "none";
-		$code = "none";
-}
-
+$fps = getfplist($icao);
 shuffle($fps);
 
-$uniques = unique_multidim_array($fps, 0);
+$flightplans = unique_multidim_array($fps, 0);
 
 # Keep track of recently used spots
 $usedspots = array();
@@ -374,6 +445,7 @@ $gaaircraft = array("C172", "C182", "PC12", "C208", "PA28", "BE35", "B350", "FA2
 # Try to put mil aircraft at mil spots
 $milaircraft = array("F35", "T38", "F15", "F14", "F22", "F18", "A10", "F4", "C130", "B52", "B1", "B2", "CV22", "MV22", "V22", "H60", "CH47", "CH55", "C5", "C17", "C141", "EA6B", "A6", "P8", "P3", "P3C", "E3", "E3CF", "E3TF", "C97", "E6", "K35A", "K35E", "K35R", "KE3", "R135", "HAR", "E2", "C2", "B58", "EUFI", "SU11", "SU15", "SU17", "SU20", "SU22", "SU24", "SU25", "SU35", "SU30", "SU32", "SU34", "SU27", "MG29", "MG31", "E767", "U2", "SR71", "A4", "RQ1", "MQ9", "CH60", "H64", "H46", "H47", "H66", "F104", "F117", "VF35", "S3", "T33", "A7", "F8", "MIR2", "MIRA", "MIR4", "MRF1", "RFAL", "ETAR", "SMB2", "AJET", "F106", "F101", "MG21", "A400", "F18H", "VULC", "SUCO", "A50", "H53", "V35B", "C30J", "MH60", "TEX2", "F35A", "CNBR", "T160", "V10", "TOR", "AN22", "F5", "UH1Y", "AN32", "CN35", "AN26");
 
+// MAKE THIS SELECTABLE
 $actoadd = 3;
 
 $theseacs = array();
@@ -412,7 +484,7 @@ for ($i=0; $i < $actoadd; $i++) {
   }
   $usedspots[] = $nextspot;
   $theseacs[] = array($nextfp, $nextspot);
-  // echo this FP to the table
+  // Could write table here
 }
 makeairfile($theseacs, $fieldelev, $outfile);
 
@@ -426,18 +498,146 @@ makeairfile($theseacs, $fieldelev, $outfile);
 <meta name="description" content="TWRTrainer Generator">
 <meta name="author" content="N">
 <link rel="stylesheet" href="style.css">
+<style>
+/*https://www.w3schools.com/howto/howto_css_tooltip.asp*/
+ /* Tooltip container */
+.tooltip {
+  position: relative;
+  display: inline-block;
+  background: #f99;
+  border-bottom: 1px dotted black; /* If you want dots under the hoverable text */
+}
+
+/* Tooltip text */
+.tooltip .tooltiptext {
+  visibility: hidden;
+  width: 120px;
+  background-color: #555;
+  color: #fff;
+  text-align: center;
+  padding: 5px 0;
+  border-radius: 6px;
+
+  /* Position the tooltip text */
+  position: absolute;
+  z-index: 1;
+  bottom: 125%;
+  left: 50%;
+  margin-left: -60px;
+
+  /* Fade in tooltip */
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+
+/* Tooltip arrow */
+.tooltip .tooltiptext::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  margin-left: -5px;
+  border-width: 5px;
+  border-style: solid;
+  border-color: #555 transparent transparent transparent;
+}
+
+/* Show the tooltip text when you mouse over the tooltip container */
+.tooltip:hover .tooltiptext {
+  visibility: visible;
+  opacity: 1;
+  /*transition: opacity 0.3s;*/
+}
+
+.flighttable td {
+	padding:4px;
+}
+
+.tdm {
+  background: #f99;
+}
+
+.tdv {
+  background: #fc6;
+}
+</style>
 </head>
 
 <h2>Flight Plans from <?php echo $icao ?></h2>
-
+<!--<div class="tooltip" style="margin-top:100px;">Hover over me
+  <span class="tooltiptext">WAFDOF</span>
+</div>-->
 <?php
 $total = count($fps);
 $calls = count($uniques);
-echo "Found ".$total." flight plans and ".$calls." unique callsigns";
-
-echo "<table><tr><th>Callsign</th><th>Type</th><th>Spot</th><th>Dest</th><th>Alt</th><th>Route</th></tr>";
-echo "<tr><td>".$fps[0][0]."</td><td>".$fps[0][1]."</td><td>N/A</td><td>".$fps[0][2]."</td><td>".$fps[0][3]."</td><td>".$fps[0][6]."</td></tr>";
+echo "<p>Found ".$total." flight plans and ".$calls." unique callsigns</p>";
+//array($csign, $actype, $dest, $alt, $rules, $rmks, $route);
+?>
+<div class="flighttable">
+<table><tr><th>Callsign</th><th>Type</th><th>Rules</th><th>Spot</th><th>Dest</th><th>Alt</th><th>Route</th></tr>
+<?php
+$origincoords = aptcoords($icao);
+foreach ($theseacs as &$thisac) {
+  //mangles: type, alt, dest, route, rules
+  echo "<tr><td>".$thisac[0][0]['callsign']."</td>";
+  if ($thisac[1][0] != "") {
+    $ac_cell = "<td class='tdm'><div class='tooltip'>".$thisac[0][0]['planned_aircraft']."<span class='tooltiptext'>".$thisac[1][0]."</span>";
+  } else {
+    $ac_cell = "<td>".$thisac[0][0]['planned_aircraft'];
+  }
+  echo $ac_cell."</td>";
+  if ($thisac[1][4] != "") {
+    $rules_cell = "<td class='tdm'><div class='tooltip'>".$thisac[0][0]['planned_flighttype']."<span class='tooltiptext'>".$thisac[1][4]."</span>";
+  } else {
+    $rules_cell = "<td>".$thisac[0][0]['planned_flighttype'];
+  }
+  echo $rules_cell."</td>";
+  echo "<td>".$thisac[0][1]."</td>";
+  if ($thisac[1][2] != "") {
+    $dest_cell = "<td class='tdm'><div class='tooltip'>".$thisac[0][0]['planned_destairport']."<span class='tooltiptext'>".$thisac[1][2]."</span>";
+    $destcoords = aptcoords($thisac[1][2]);
+  } else {
+    $dest_cell = "<td>".$thisac[0][0]['planned_destairport'];
+    $destcoords = aptcoords($thisac[0][0]['planned_destairport']);
+  }
+  echo $dest_cell."</td>";
+  
+  $dof = inithdg($origincoords, $destcoords) - $magvar;
+  $alt = $thisac[0][0]['planned_altitude'];
+  if (($dof < 180 ) || ($dof == 360)) {
+    if ( ($alt/1000)%2 != 1 ) {
+      if ($thisac[1][1] != "") {
+        $alt_cell = "<td class='tdm'><div class='tooltip'>".$alt."<span class='tooltiptext'>".$thisac[1][1]."</span>";
+      } else {
+        $alt_cell = "<td class='tdv'><div class='tooltip'>".$alt."<span class='tooltiptext'>WAFDOF</span>";
+      }
+    } else {
+      $alt_cell = "<td>".$alt;
+    }
+  } else {
+    if ( ($alt/1000)%2 != 0 ) {
+      if ($thisac[1][1] != "") {
+        $alt_cell = "<td class='tdm'><div class='tooltip'>".$alt."<span class='tooltiptext'>".$thisac[1][1]."</span>";
+      } else {
+        $alt_cell = "<td class='tdv'><div class='tooltip'>".$alt."<span class='tooltiptext'>WAFDOF</span>";
+      }
+    } else {
+      $alt_cell = "<td>".$alt;
+    }
+  }
+  echo $alt_cell."</td>";
+  
+  if ($thisac[1][3] != "") {
+    //$mangled((0 nuke, >0 elems), origroute)
+    $route_cell = "<td class='tdm'><div class='tooltip'>".$thisac[0][0]['planned_route']."<span class='tooltiptext'>".$thisac[1][3]."</span>";
+  } else {
+    $route_cell = "<td>".$thisac[0][0]['planned_route'];
+  }
+  echo $route_cell."</td></tr>\n";
+}
  ?>
 </table>
+<form action=""><p>Get <input type="text" name="actoget" style="width:20px;"> more aircraft. <input type="submit" value="submit"></p>
+</div>
 </body>
 </html>
