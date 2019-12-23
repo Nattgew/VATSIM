@@ -73,39 +73,39 @@ with urllib.request.urlopen(dataurl) as response:
                 #print(line)
                 clients.append(newclient(line))
 
-db = MySQLdb.connect(host="localhost",    # your host, usually localhost
-                     user="",         # your username
-                     passwd="",  # your password
-                     db="")        # name of the data base
+db = MySQLdb.connect(host="localhost",
+                     user="",
+                     passwd="",
+                     db="")
 db.set_character_set('utf8')
 cur = db.cursor()
 cur.execute('SET NAMES utf8;')
 cur.execute('SET CHARACTER SET utf8;')
 cur.execute('SET character_set_connection=utf8;')
 
-keys = ["callsign", "cid", "realname", "clienttype", "frequency", "latitude", "longitude", "altitude", "groundspeed", "planned_aircraft", "planned_tascruise", "planned_depairport", "planned_altitude", "planned_destairport", "server", "protrevision", "rating", "transponder", "facilitytype", "visualrange", "planned_revision", "planned_flighttype", "planned_deptime", "planned_actdeptime", "planned_hrsenroute", "planned_minenroute", "planned_hrsfuel", "planned_minfuel", "planned_altairport", "planned_remarks", "planned_route", "planned_depairport_lat", "planned_depairport_lon", "planned_destairport_lat", "planned_destairport_lon", "atis_message", "time_last_atis_received", "time_logon", "heading", "QNH_iHg", "QNH_Mb"]
+keys = ["callsign", "cid", "realname", "frequency", "latitude", "longitude", "altitude", "groundspeed", "planned_aircraft", "planned_tascruise", "planned_depairport", "planned_altitude", "planned_destairport", "server", "rating", "transponder", "facilitytype", "visualrange", "planned_revision", "planned_flighttype", "planned_deptime", "planned_actdeptime", "planned_hrsenroute", "planned_minenroute", "planned_hrsfuel", "planned_minfuel", "planned_altairport", "planned_remarks", "planned_route", "time_logon", "heading", "QNH_iHg", "QNH_Mb"]
 
 cur.execute('START TRANSACTION')
 # Go through the current clients and find any we care about
 for client in clients:
     if client['clienttype'] in ["PILOT","PREFILE"]:
         #print("Looking for cid: "+client['cid']+"   time: "+client['time_logon'])
+        row = []
+        for key in keys:
+            row.append(client[key])
         if client['clienttype'] == "PILOT":
-            cur.execute('SELECT COUNT(*) FROM flights WHERE cid = %s AND time_logon = %s and planned_revision = %s', (client['cid'], client['time_logon'], client['planned_revision']))
+            cur.execute('INSERT INTO flights SELECT %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s FROM DUAL WHERE NOT EXISTS (SELECT * FROM flights WHERE cid = %s AND time_logon = %s and planned_revision = %s LIMIT 1)', (*row, client['cid'], client['time_logon'], client['planned_revision']))
         elif client['clienttype'] == "PREFILE":
-            cur.execute('SELECT COUNT(*) FROM flights WHERE cid = %s AND planned_route = %s', (client['cid'], client['planned_route']))
-        # print all the first cell of all the rows
-        exist = cur.fetchone()[0]
-        if not exist:
-            row = []
-            for key in keys:
-                row.append(client[key])
-#            print("Adding row len "+str(len(row))+":")
-            #print(row)
-            #print(tuple(client.values()))
-            cur.execute('INSERT INTO flights VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)', row)
-        #else:
-            #print("X")
+            cur.execute('INSERT INTO flights SELECT %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s FROM DUAL WHERE NOT EXISTS (SELECT * FROM flights WHERE cid = %s AND planned_route = %s LIMIT 1)', (*row, client['cid'], client['planned_route']))
+            
+        # Improvement on previous code?
+        # if client['clienttype'] == "PILOT":
+            # sql = 'SELECT EXISTS(SELECT 1 FROM flights WHERE cid = %s AND time_logon = %s and planned_revision = %s LIMIT 1)'
+            # val = (client['cid'], client['time_logon'], client['planned_revision'])
+        # elif client['clienttype'] == "PREFILE":
+            # sql = 'SELECT EXISTS(SELECT 1 FROM flights WHERE cid = %s AND planned_route = %s LIMIT 1)'
+            # val = (client['cid'], client['planned_route'])
+        # if not cur.execute(sql, val):
 
 db.commit()
 db.close()
