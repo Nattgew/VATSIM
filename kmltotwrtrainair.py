@@ -212,14 +212,15 @@ for document in root: #Root contains a document tag
 								airfile.write("\n")
 
 								#Now write all the features
-								
+
 								for spot in parkings:
 									airfile.write("[PARKING "+spot[0]+"]\n")
 									airfile.write(spot[1][0]+" "+spot[1][1]+"\n\n")
 
 								for rwy in runways:
 									airfile.write("[RUNWAY "+rwy[0]['name']+"]\n")
-									airfile.write("displaced threshold="+rwy[0]['displaced threshold']+"\n")
+									if 'displaced threshold' in rwy[0].keys():
+										airfile.write("displaced threshold="+rwy[0]['displaced threshold']+"\n")
 									airfile.write("turnoff="+rwy[0]['turnoff']+"\n")
 									for node in rwy[1]:
 										airfile.write(node[0]+" "+node[1]+"\n")
