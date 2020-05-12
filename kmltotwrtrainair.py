@@ -38,7 +38,8 @@ def desctodict(desc):
 		#print(line)
 		#Split by equals and add to dictionary
 		assign = line.split('=')
-		descdict[assign[0]]=assign[1]
+		if len(assign)>1:
+			descdict[assign[0]]=assign[1]
 	return descdict
 
 #Unused for now, could find nearest airports and stuff
@@ -51,8 +52,79 @@ def cosinedist(coord1,coord2): #Use cosine to find distance between coordinates
 	R = 3440.06479 # Nmi
 	# gives d in Nmi
 	d = math.acos( math.sin(phi1)*math.sin(phi2) + math.cos(phi1)*math.cos(phi2) * math.cos(dellamb) ) * R
+	#print("    Found distance "+str(d))
 	return d
 
+
+class ttairport:
+
+	def __init__(self, name, sats = [], pricao = None):
+		self.name = name
+		self.pricao = pricao
+		self.parking = []
+		self.runway = []
+		self.taxiway = []
+		self.hold = []
+		self.dd = {}
+		self.sats = sats
+
+	def assimilate(self, thisairport):
+		self.runway.extend(thisairport.runway)
+		if thisairport.name == self.pricao:
+			self.parking.extend(thisairport.parking)
+			self.taxiway.extend(thisairport.taxiway)
+			self.hold.extend(thisairport.hold)
+			self.dd = thisairport.dd # Use primary airport data
+		else:
+			for t in thisairport.taxiway:
+				self.taxiway.append([thisairport.name[1]+t[0], t[1]])
+			for p in thisairport.parking:
+				self.parking.append([thisairport.name[1]+p[0], p[1]])
+			for h in thisairport.hold:
+				self.hold.append([thisairport.name[1]+h[0], h[1]])
+
+	def writefile(self):
+		with open(self.name+".apt","w") as airfile:
+			#Write the variables
+			#airfile.write("icao=KPDX"\n")
+			for key,val in self.dd.items():
+				airfile.write(key+"="+val+"\n")
+			# airfile.write("magnetic variation="+magvar+"\n")
+			# airfile.write("field elevation="+fieldelev+"\n")
+			# airfile.write("pattern elevation="+patternelev+"\n")
+			# airfile.write("pattern size="+patternsz+"\n")
+			# airfile.write("initial climb props="+initclbp+"\n")
+			# airfile.write("initial climb jets="+initclbj+"\n")
+			# airfile.write("jet airlines="+jetairlines+"\n")
+			# airfile.write("turboprop airlines="+tpropairlines+"\n")
+			# airfile.write("registration="+reg+"\n\n")
+			airfile.write("\n")
+
+			#Now write all the features
+
+			for spot in self.parking:
+				airfile.write("[PARKING "+spot[0]+"]\n")
+				airfile.write(spot[1][0]+" "+spot[1][1]+"\n\n")
+
+			for rwy in self.runway:
+				airfile.write("[RUNWAY "+rwy[0]['name']+"]\n")
+				if 'displaced threshold' in rwy[0].keys():
+					airfile.write("displaced threshold="+rwy[0]['displaced threshold']+"\n")
+				airfile.write("turnoff="+rwy[0]['turnoff']+"\n")
+				for node in rwy[1]:
+					airfile.write(node[0]+" "+node[1]+"\n")
+				airfile.write("\n")
+
+			for twy in self.taxiway:
+				airfile.write("[TAXIWAY "+twy[0]+"]\n")
+				#print(twy[1])
+				for node in twy[1]:
+					airfile.write(node[0]+" "+node[1]+"\n")
+				airfile.write("\n")
+
+			for hold in self.hold:
+				airfile.write("[HOLD "+hold[0]+"]\n")
+				airfile.write(hold[1][0]+" "+hold[1][1]+"\n\n")
 #Default descriptions in case we can't read one
 #Mostly for testing?
 defaultdesc={
@@ -87,6 +159,11 @@ defaultac={
 	"Heading":"180"
 }
 
+ttapts = {}
+tracons = [('P80','KPDX',("KPDX", "KTTD", "KHIO", "KSPB", "KUAO", "KVUO")),]
+tracons.append(('S46','KSEA',("KSEA", "KBFI")))
+for t in tracons:
+	ttapts[t[0]] = ttairport(t[0], t[2], t[1])
 #The code is highly nested so if any step fails it just stops processing that part
 #File will be written if at least ICAO is read, but could be empty
 ns = {'egc': 'http://www.opengis.net/kml/2.2'}
@@ -112,13 +189,6 @@ for document in root: #Root contains a document tag
 				if len(elnameo)>0 and elnameo[0].text=="AirportFiles":
 					#Process each airport folder
 					for airport in trainertype:
-						#Read description tag for the folder
-						eldesc=airport.findall("egc:description",ns)
-						if len(eldesc)>0:
-							#Make iterable of the lines
-							descdict=desctodict(eldesc[0].text)
-						else: #If no description, use defaults
-							descdict=defaultdesc
 						#print("  "+airport.tag)
 						#Name should be icao, could also use from the description
 						elicao=airport.findall("egc:name",ns)
@@ -126,12 +196,15 @@ for document in root: #Root contains a document tag
 							icao = elicao[0].text
 							print("Processing: "+icao)
 							#print("  "+icao)
-							#These are lists of features at this airport
-							#Todo: dict?
-							runways=[]
-							parkings=[]
-							taxiways=[]
-							holds=[]
+							#Read description tag for the folder
+							thisairport = ttairport(icao)
+							eairport = eseairport(icao)
+							eldesc=airport.findall("egc:description",ns)
+							if len(eldesc)>0:
+								#Make iterable of the lines
+								thisairport.dd=desctodict(eldesc[0].text)
+							else: #If no description, use defaults
+								thisairport.dd=defaultdesc
 							#Each category will be one of the above
 							for category in airport:
 								#print("   "+category.tag)
@@ -167,12 +240,12 @@ for document in root: #Root contains a document tag
 																	if len(eldesc)>0:
 																		rwydict=desctodict(eldesc[0].text)
 																	else: #Defaults
-																		rwydict=defaultrwy
+																		rwydict=defaultrwy.copy()
 																	#Already got this so just add it
 																	rwydict["name"]=pmname
-																	runways.append([rwydict,rawcoordlist])
+																	thisairport.runway.append([rwydict,rawcoordlist])
 																elif type=="taxiway": #Save to taxiway name and list of coords
-																	taxiways.append([pmname,rawcoordlist])
+																	thisairport.taxiway.append([pmname,rawcoordlist])
 												#Handle parking and holds together as they're both points
 												elif type=="parking" or type=="hold":
 													elpts=pmark.findall("egc:Point",ns)
@@ -187,55 +260,17 @@ for document in root: #Root contains a document tag
 																#print("     "+coords)
 																#Add to list as name and coords
 																if type=="parking":
-																	parkings.append([pmname,latlon])
+																	thisairport.parking.append([pmname,latlon])
 																elif type=="hold":
-																	holds.append([pmname,latlon])
+																	thisairport.hold.append([pmname,latlon])
 																#print(parkings)
 									else:
 										print("Did not recognize category: "+type)
 							#We're done with all the features here
-							#Write a file for this airport
-							with open(icao+".apt","w") as airfile:
-								#Write the variables
-								airfile.write("icao="+icao+"\n")
-								for key,val in descdict.items():
-									airfile.write(key+"="+val+"\n")
-								# airfile.write("magnetic variation="+magvar+"\n")
-								# airfile.write("field elevation="+fieldelev+"\n")
-								# airfile.write("pattern elevation="+patternelev+"\n")
-								# airfile.write("pattern size="+patternsz+"\n")
-								# airfile.write("initial climb props="+initclbp+"\n")
-								# airfile.write("initial climb jets="+initclbj+"\n")
-								# airfile.write("jet airlines="+jetairlines+"\n")
-								# airfile.write("turboprop airlines="+tpropairlines+"\n")
-								# airfile.write("registration="+reg+"\n\n")
-								airfile.write("\n")
-
-								#Now write all the features
-
-								for spot in parkings:
-									airfile.write("[PARKING "+spot[0]+"]\n")
-									airfile.write(spot[1][0]+" "+spot[1][1]+"\n\n")
-
-								for rwy in runways:
-									airfile.write("[RUNWAY "+rwy[0]['name']+"]\n")
-									if 'displaced threshold' in rwy[0].keys():
-										airfile.write("displaced threshold="+rwy[0]['displaced threshold']+"\n")
-									airfile.write("turnoff="+rwy[0]['turnoff']+"\n")
-									for node in rwy[1]:
-										airfile.write(node[0]+" "+node[1]+"\n")
-									airfile.write("\n")
-
-								for twy in taxiways:
-									airfile.write("[TAXIWAY "+twy[0]+"]\n")
-									#print(twy[1])
-									for node in twy[1]:
-										airfile.write(node[0]+" "+node[1]+"\n")
-									airfile.write("\n")
-
-								for hold in holds:
-									airfile.write("[HOLD "+hold[0]+"]\n")
-									airfile.write(hold[1][0]+" "+hold[1][1]+"\n\n")
+							for tracon in tracons:
+								if icao in ttapts[tracon[0]].sats:
+									ttapts[tracon[0]].assimilate(thisairport)
+							ttapts[icao]=thisairport
 				elif len(elnameo)>0 and elnameo[0].text=="AirFiles":
 					#Process each situation folder
 					for situation in trainertype:
@@ -299,3 +334,17 @@ for document in root: #Root contains a document tag
 									for field in ["Type","Engine","Rules","Dep Field","Arr Field","Crz Alt","Route","Remarks","Sqk Code","Sqk Mode","Lat","Lon","Alt","Speed","Heading"]:
 										sitfile.write(":"+acdict[field])
 									sitfile.write("\n")
+
+for t in tracons:
+	ttapts[t[0]].writefile()
+
+satapts = {}
+satapts['KPDX'] = ("KTTD", "KVUO")
+satapts['KSEA'] = ("KBFI",)
+
+for icao, ttapt in ttapts.items():
+	if icao in satapts:
+		for sat in satapts[icao]:
+			ttapt.assimilate(ttapts[sat])
+	#Write a file for this airport
+	ttapt.writefile()
