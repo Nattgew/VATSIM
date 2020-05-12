@@ -55,6 +55,29 @@ def cosinedist(coord1,coord2): #Use cosine to find distance between coordinates
 	#print("    Found distance "+str(d))
 	return d
 
+def ddtodms(lat, lon):
+    # Convert decimal degrees to the sct2 format of [NSEW]DDD.MM.SS.SSS
+    # First get the NSEW directions
+    latdir = "N" if lat > 0 else "S"
+    londir = "E" if lon > 0 else "W"
+    # Take out any negatives
+    lat = abs(lat)
+    lon = abs(lon)
+    # Round down to integers
+    latdeg = int(lat)
+    londeg = int(lon)
+    # Get minutes
+    latdmin = (lat-latdeg)*60
+    londmin = (lon-londeg)*60
+    # Get seconds
+    latdsec = (latdmin - int(latdmin))*60
+    londsec = (londmin - int(londmin))*60
+    # Assemble the strings
+    latstr = "%s%03.f.%02.f.%06.3f" % (latdir, latdeg, int(latdmin), latdsec)
+    lonstr = "%s%03.f.%02.f.%06.3f" % (londir, londeg, int(londmin), londsec)
+    # Return the lat lon pair in VRC format
+    #coordstr = latstr + " " + lonstr
+    return (latstr, lonstr)
 
 class ttairport:
 
@@ -125,6 +148,87 @@ class ttairport:
 			for hold in self.hold:
 				airfile.write("[HOLD "+hold[0]+"]\n")
 				airfile.write(hold[1][0]+" "+hold[1][1]+"\n\n")
+
+class eseairport:
+
+	def __init__(self, name):
+		self.name = name
+		self.taxi = []
+		self.runway = []
+		self.exit = []
+
+	def writefile(self):
+    # EXIT:<RWY name>:<exit name>:<direction>:<maximum speed>
+    # TAXI:<TWY name>:<maximum speed>[:<usage flag>][:<gate name>]
+    # COORD:<latitude>:<longitude>
+		if self.taxi or self.exit:
+			print("Writing ESE for "+self.name)
+			#print(self.taxi)
+			with open(self.name+".ese","w") as airfile:
+				nodes = []
+				airfile.write("[GROUND]\n")
+				#Now write all the features
+				for ex in self.exit:
+					#print("Writing exit "+ex[0]['name']+": "+str(ex[0]))
+					if 'maxspeed' in ex[0].keys():
+						maxspd = ex[0]['maxspeed']
+					else:
+						maxspd = "20"
+					if not 'runway' in ex[0].keys():
+						print("Missing runway for exit "+ex[0]['name'])
+					ei = ["EXIT", ex[0]['runway'], ex[0]['name'], ex[0]['direction'], maxspd]
+					airfile.write(":".join(ei)+"\n")
+					i = 0
+					for node in ex[1]:
+						if len(nodes) == 0:
+							nodes.append(node)
+						elif i==0 or i==len(ex[1])-1:
+							for pnode in nodes:
+								if cosinedist(pnode,node) < 8/6076:
+									#print("Fusing point on exit "+ex[0]['name'])
+									node = pnode
+									break
+							else:
+								#print("Not fusing point on exit "+ex[0]['name'])
+								nodes.append(node)
+						coords = ddtodms(*node)
+						airfile.write("COORD:"+coords[0]+":"+coords[1]+"\n")
+						i+=1
+					#airfile.write("\n")
+
+				for twy in self.taxi:
+					#print("Writing twy "+twy[0]['name']+": "+str(twy[0]))
+					if 'maxspeed' in twy[0].keys():
+						maxspd = twy[0]['maxspeed']
+					else:
+						maxspd = "20"
+					ti = ["TAXI", twy[0]['name'], maxspd]
+					if 'flg' in twy[0].keys():
+						ti.append(twy[0]['flg'])
+					if 'gate' in twy[0].keys():
+						ti.append(twy[0]['gate'])
+					airfile.write(":".join(ti)+"\n")
+					#print(twy[1])
+					i=0
+					for node in twy[1]:
+						if len(nodes) == 0:
+							nodes.append(node)
+						elif i==0 or i==len(ex[1])-1:
+							for pnode in nodes:
+								if cosinedist(pnode,node) < 8/6076:
+									#print("Fusing point on twy "+twy[0]['name'])
+									node = pnode
+									break
+							else:
+								#print("Not fusing point on twy "+twy[0]['name'])
+								nodes.append(node)
+						coords = ddtodms(*node)
+						airfile.write("COORD:"+coords[0]+":"+coords[1]+"\n")
+						i+=1
+					#airfile.write("\n")
+		else:
+			print("Not writing ESE for "+self.name)
+
 #Default descriptions in case we can't read one
 #Mostly for testing?
 defaultdesc={
@@ -141,6 +245,10 @@ defaultdesc={
 defaultrwy={
 	"displaced threshold":"0/0",
 	"turnoff":"left"
+}
+defaultdict={
+	"spd": "20",
+	"flg": "1"
 }
 #Default aircraft for situations
 #Name, coords, and alt taken from the point
@@ -160,10 +268,13 @@ defaultac={
 }
 
 ttapts = {}
+eapts = {}
 tracons = [('P80','KPDX',("KPDX", "KTTD", "KHIO", "KSPB", "KUAO", "KVUO")),]
 tracons.append(('S46','KSEA',("KSEA", "KBFI")))
 for t in tracons:
 	ttapts[t[0]] = ttairport(t[0], t[2], t[1])
+	eapts[t[0]] = eseairport(t[0])
+
 #The code is highly nested so if any step fails it just stops processing that part
 #File will be written if at least ICAO is read, but could be empty
 ns = {'egc': 'http://www.opengis.net/kml/2.2'}
@@ -214,7 +325,7 @@ for document in root: #Root contains a document tag
 									type=elcategory[0].text
 									#print("   "+type)
 									#Look for the valid types of features
-									if type in ["runway","taxiway","parking","hold"]:
+									if type in ["runway","taxiway","parking","hold","taxi","exit"]:
 										for pmark in category:
 											#print("    "+pmark.tag)
 											#Get name
@@ -264,6 +375,32 @@ for document in root: #Root contains a document tag
 																elif type=="hold":
 																	thisairport.hold.append([pmname,latlon])
 																#print(parkings)
+												elif type=="taxi" or type=="exit":
+													#print("Found ese placemark for "+pmname)
+													ellin=pmark.findall("egc:LineString",ns)
+													if len(ellin)>0:
+														for line in ellin:
+															#print("     "+line.tag)
+															elcoord=line.findall("egc:coordinates",ns)
+															#Grab list of coordinates
+															if len(elcoord)>0:
+																rawcoordlist=[[float(i.strip().split(',')[1]),float(i.strip().split(',')[0])] for i in elcoord[0].text.strip().split(' ') if i!='']
+																#print(rawcoordlist)
+																#print("     coordlist")
+																#Save to runways list as dict of properties and list of coords
+																eldesc=pmark.findall("egc:description",ns)
+																#Description holds a couple needed items
+																if len(eldesc)>0:
+																	pdict=desctodict(eldesc[0].text)
+																else: #Defaults
+																	pdict=defaultdict.copy()
+																#Already got this so just add it
+																pdict["name"]=pmname
+																#print("    Writing dict: "+str(pdict))
+																if type=="exit":
+																	eairport.exit.append([pdict,rawcoordlist])
+																elif type=="taxi":
+																	eairport.taxi.append([pdict,rawcoordlist])
 									else:
 										print("Did not recognize category: "+type)
 							#We're done with all the features here
@@ -271,6 +408,7 @@ for document in root: #Root contains a document tag
 								if icao in ttapts[tracon[0]].sats:
 									ttapts[tracon[0]].assimilate(thisairport)
 							ttapts[icao]=thisairport
+							eapts[icao]=eairport
 				elif len(elnameo)>0 and elnameo[0].text=="AirFiles":
 					#Process each situation folder
 					for situation in trainertype:
@@ -337,6 +475,7 @@ for document in root: #Root contains a document tag
 
 for t in tracons:
 	ttapts[t[0]].writefile()
+	eapts[t[0]].writefile()
 
 satapts = {}
 satapts['KPDX'] = ("KTTD", "KVUO")
@@ -348,3 +487,6 @@ for icao, ttapt in ttapts.items():
 			ttapt.assimilate(ttapts[sat])
 	#Write a file for this airport
 	ttapt.writefile()
+
+for icao, eapt in eapts.items():
+	eapt.writefile()
