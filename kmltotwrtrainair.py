@@ -29,6 +29,20 @@ import re, math
 				# ...
 		# ...
 
+def getsegments(pdict, coordlist, startindex):
+	# pdict, rawcoordlist, segments[pdict['name']]
+	segments = []
+	index = startindex
+	basename = pdict['name']
+	lastcoord = coordlist[0]
+	for coord in coordlist[1:]:
+		thisd = pdict.copy()
+		thisd['name'] = basename+"/"+str(index)
+		segments.append([thisd, [lastcoord, coord]])
+		lastcoord = coord
+		index+=1
+	return segments, index
+
 #This takes a single string and parses key=value lines into dict
 def desctodict(desc):
 	descdict={}
@@ -310,6 +324,7 @@ for document in root: #Root contains a document tag
 							#Read description tag for the folder
 							thisairport = ttairport(icao)
 							eairport = eseairport(icao)
+							segments={}
 							eldesc=airport.findall("egc:description",ns)
 							if len(eldesc)>0:
 								#Make iterable of the lines
@@ -400,7 +415,18 @@ for document in root: #Root contains a document tag
 																if type=="exit":
 																	eairport.exit.append([pdict,rawcoordlist])
 																elif type=="taxi":
-																	eairport.taxi.append([pdict,rawcoordlist])
+																	if "segment" in pdict.keys():
+																		#if "number" in pdict.keys() and pdict['number'] == "yes":
+																		if not pdict['name'] in segments.keys():
+																			segments[pdict['name']] = 1
+																		startindex = segments[pdict['name']]
+																		#else:
+																		#	startindex = None
+																		segs, segments[pdict['name']] = getsegments(pdict, rawcoordlist, startindex)
+																		for seg in segs:
+																			eairport.taxi.append(seg)
+																	else:
+																		eairport.taxi.append([pdict,rawcoordlist])
 									else:
 										print("Did not recognize category: "+type)
 							#We're done with all the features here
