@@ -7,6 +7,7 @@ import urllib.request
 import json
 #import os
 import pickle
+import datetime
 import MySQLdb
 import sys
 sys.path.insert(1, '/home/pi/git/X-Plane-Plugins/')
@@ -79,13 +80,17 @@ def newjsonclient(jclient, clienttype):
     client = {}
     #print(jclient)
     # Keys we still have
-    sameoldkeys = ["callsign", "cid", "realname", "frequency", "latitude", "longitude", "altitude", "groundspeed", "server", "rating", "transponder", "facilitytype", "visualrange", "atis_message", "time_last_atis_received", "time_logon", "heading", "QNH_iHg", "QNH_Mb"]
+    sameoldkeys = ["callsign", "cid", "realname", "frequency", "latitude", "longitude", "altitude", "groundspeed", "server", "rating", "transponder", "facilitytype", "visualrange", "atis_message", "heading", "QNH_iHg", "QNH_Mb"]
     # New names for keys we still have
-    samenewkeys = ["callsign", "cid", "name", "frequency", "latitude", "longitude", "altitude", "groundspeed", "server", "rating", "transponder", "facility", "visual_range", "text_atis", "last_updated", "logon_time", "heading", "qnh_i_hg", "qnh_mb"]
+    samenewkeys = ["callsign", "cid", "name", "frequency", "latitude", "longitude", "altitude", "groundspeed", "server", "rating", "transponder", "facility", "visual_range", "text_atis", "heading", "qnh_i_hg", "qnh_mb"]
     # Items that are now in the flight plan section
     routeoldkeys = ["planned_aircraft", "planned_tascruise", "planned_depairport", "planned_altitude", "planned_destairport", "planned_flighttype", "planned_deptime", "planned_altairport", "planned_remarks", "planned_route"]
     # New key in the flight plan section
     routenewkeys = ["aircraft_faa", "cruise_tas", "departure", "altitude", "arrival", "flight_rules", "deptime", "alternate", "remarks", "route"]
+    # Items that need date conversion
+    dateoldkeys = ["time_last_atis_received", "time_logon"]
+    # New keys for date conversion
+    datenewkeys = ["last_updated", "logon_time"]
     # Items we don't have a good new key for
     nokeys = ["planned_revision","planned_actdeptime"]
 
@@ -108,22 +113,31 @@ def newjsonclient(jclient, clienttype):
         hrs = int(int(fp["enroute_time"])/60)
         mins = int(fp["enroute_time"]) % 60
         client["planned_hrsenroute"] = hrs
-        client["planned_minsenroute"] = mins
+        client["planned_minenroute"] = mins
         hrs = int(int(fp["fuel_time"])/60)
         mins = int(fp["fuel_time"]) % 60
         client["planned_hrsfuel"] = hrs
-        client["planned_minsfuel"] = mins
-        #print("  er: "+str(fp["enroute_time"])+" "+str(client["planned_hrsenroute"])+":"+str(client["planned_minsenroute"]))
-        #print("  fuel: "+str(fp["fuel_time"])+" "+str(client["planned_hrsfuel"])+":"+str(client["planned_minsfuel"]))
+        client["planned_minfuel"] = mins
+        #print("  er: "+str(fp["enroute_time"])+" "+str(client["planned_hrsenroute"])+":"+str(client["planned_minenroute"]))
+        #print("  fuel: "+str(fp["fuel_time"])+" "+str(client["planned_hrsfuel"])+":"+str(client["planned_minfuel"]))
     else:
         # Set these keys to None
         for i in range(len(routeoldkeys)):
             client[routeoldkeys[i]] = None
         client["planned_hrsenroute"] = None
-        client["planned_minsenroute"] = None
+        client["planned_minenroute"] = None
         client["planned_hrsfuel"] = None
-        client["planned_minsfuel"] = None
+        client["planned_minfuel"] = None
 
+    # Convert dates to timestamp format
+    for i in range(len(dateoldkeys)):
+        if datenewkeys[i] not in jclient or jclient[datenewkeys[i]] == "":
+            val = None
+        else:
+            val = int(datetime.datetime.strptime(jclient[datenewkeys[i]][:-2], '%Y-%m-%dT%H:%M:%S.%f').strftime('%Y%m%d%H%M%S'))
+        client[dateoldkeys[i]] = val
+
+    # Define empty keys as None
     for i in range(len(nokeys)):
         client[nokeys[i]] = None
 
@@ -192,6 +206,7 @@ with urllib.request.urlopen(dataurl) as response:
     #print(html)
     if statusformat == "json3":
         vatsimdata = json.loads(html)
+        print("Got JSON: there are "+str(vatsimdata['general']['connected_clients'])+" online")
         # general, pilots, controllers, prefiles, servers, facilities, ratings, pilot_ratings
         for c in vatsimdata['pilots']:
             clients.append(newjsonclient(c, "PILOT"))
@@ -202,8 +217,10 @@ with urllib.request.urlopen(dataurl) as response:
     elif statusformat == "url0":
         # Whether we are reading a section with clients to log
         clientsec = 0
+        lines = html.split("\n")
+        print("Got TXT: there are "+str(len(lines))+" lines in the file")
         # HTML needs a split on \n, text file doesn't
-        for line in html.split("\n"):
+        for line in lines:
             #print(line)
             line = line.rstrip()
             # Like the universe, header sections begin with bang
@@ -221,6 +238,8 @@ with urllib.request.urlopen(dataurl) as response:
                 if clientsec:
                     #print(line)
                     clients.append(newclient(line))
+    else:
+        print("ERROR: Unrecognized status format: "+statusformat)
 #print("Processing clients from "+sys.argv[1]+"...")
 db = MySQLdb.connect(host="localhost",
                      user="",
@@ -289,7 +308,7 @@ for client in clients:
             dist = fseutils.cosinedist(float(client['latitude']), float(client['longitude']), *destairports[client['planned_destairport']])
             # Estimate ETA (hours) based on groundspeed
             eta = dist/int(client['groundspeed'])
-            print("      "+client['callsign']+" "+str(dist)+" Nmi from "+client['planned_destairport']+" at "+client['groundspeed']+"kt, ETA "+str(eta*60)+" mins")
+            print("      "+client['callsign']+" "+str(dist)+" Nmi from "+client['planned_destairport']+" at "+str(client['groundspeed'])+"kt, ETA "+str(eta*60)+" mins")
             # Add if the ETA is between 15 and 60 minutes
             if 0.25 < eta < 1:
                 ibd[client['planned_destairport']].append((client['callsign'], eta))
