@@ -158,6 +158,17 @@ keys = ["callsign", "cid", "realname", "latitude", "longitude", "altitude", "gro
 localkeys = ["callsign", "latitude", "longitude", "groundspeed", "planned_aircraft", "planned_depairport", "planned_altitude", "planned_destairport", "transponder", "planned_revision", "planned_flighttype", "planned_altairport", "planned_remarks", "planned_route", "time_logon", "heading"]
 # Airports to log for local flights
 localairports = ["KPDX", "KSEA", "KGEG", "KRDM", "KOTH", "KTTD", "KHIO", "KEUG", "KVUO", "KSPB", "KUAO", "KBFI", "KRNT", "KPAE", "KTCM", "KTIW", "KOLM", "KGRF", "KPWT", "KPLU", "S50", "S43", "KMMV"]
+# Airports to notify incoming rushes or watched pilots
+destairports = {"KSEA": [47.449889, -122.311778],
+                "KPDX": [45.588709, -122.596869],
+                "KGEG": [47.619900, -117.534000],
+                "KEUG": [44.123200, -123.219000],
+                "KPAE": [47.906300, -122.282000],
+                "KBFI": [47.530000, -122.302000],
+                "KMFR": [42.374222, -122.873500],
+                "KMWH": [47.208583, -119.319139],
+                "KPSC": [46.264682, -119.119024],
+                "KYKM": [46.568167, -120.544056]}
 # Airports to notify DEL online
 delapts = ("ALW","BFI","BLI","EUG","GEG","GRF","HIO","LMT","LWS","MFR","MWH","OLM","PAE","PDT","PSC","RDM","RNT","SFF","SLE","TCM","TIW","TTD","YKM","OTH","UAO")
 # Airports to notify GND online
@@ -168,6 +179,9 @@ i=0
 #pi=0
 #pr=0
 #rows=[]
+ibd={}
+for apt in destairports:
+    ibd[apt] = []
 tot=len([i for i in clients if i['clienttype'] in ["PILOT","PREFILE"]])
 print("Processing "+str(tot)+" clients...")
 cur.execute('START TRANSACTION')
@@ -184,6 +198,16 @@ for client in clients:
         if any(apt in localairports for apt in [client['planned_depairport'],client['planned_destairport']]):
             for key in localkeys:
                 localrow.append(client[key])
+        # Look for inbound flights
+        if client['planned_destairport'] in destairports and client['groundspeed'] is not None and int(client['groundspeed']) > 30:
+            # Distance from destination
+            dist = fseutils.cosinedist(float(client['latitude']), float(client['longitude']), *destairports[client['planned_destairport']])
+            # Estimate ETA (hours) based on groundspeed
+            eta = dist/int(client['groundspeed'])
+            print("      "+client['callsign']+" "+str(dist)+" Nmi from "+client['planned_destairport']+" at "+client['groundspeed']+"kt, ETA "+str(eta*60)+" mins")
+            # Add if the ETA is between 15 and 60 minutes
+            if 0.25 < eta < 1:
+                ibd[client['planned_destairport']].append((client['callsign'], eta))
         if not (client['planned_depairport'] is None and client['planned_destairport'] is None and client['planned_route'] is None):
             # Process pilot clients
 
@@ -251,3 +275,17 @@ for client in clients:
 #print("Committing new of "+str(pi)+" pilots, "+str(pr)+" prefile from "+sys.argv[1]+"...")
 db.commit()
 db.close()
+# See if we notify for inbound aircraft
+for apt in ibd:
+    # Notify if more than 4 aircraft inbound at this airport
+    # Could also consider all airports if you want to work CTR
+    if len(ibd[apt]) > 4:
+        msg = ""
+        # List all the flights in the message
+        for flight in ibd[apt]:
+            etahr = str(int(flight[1]))
+            etamin = str(round((flight[1] % 1) * 60))
+            msg += flight[0]+" in "+etahr+":"+etamin+"\n"
+        fseutils.sendemail("VATSIM Rush Into "+apt, msg, 0)
+    else:
+        print("Only "+str(len(ibd[apt]))+" ibd to "+apt)
