@@ -145,7 +145,7 @@ def newjsonclient(jclient, clienttype):
 
     client = sanitizeclient(client)
 
-    print(client)
+    #print(client)
 
     return client
 
