@@ -147,7 +147,8 @@ class ttairport:
 				airfile.write("[RUNWAY "+rwy[0]['name']+"]\n")
 				if 'displaced threshold' in rwy[0].keys():
 					airfile.write("displaced threshold="+rwy[0]['displaced threshold']+"\n")
-				airfile.write("turnoff="+rwy[0]['turnoff']+"\n")
+				if 'turnoff' in rwy[0]:
+					airfile.write("turnoff="+rwy[0]['turnoff']+"\n")
 				for node in rwy[1]:
 					airfile.write(node[0]+" "+node[1]+"\n")
 				airfile.write("\n")
