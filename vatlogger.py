@@ -173,6 +173,8 @@ destairports = {"KSEA": [47.449889, -122.311778],
 delapts = ("ALW","BFI","BLI","EUG","GEG","GRF","HIO","LMT","LWS","MFR","MWH","OLM","PAE","PDT","PSC","RDM","RNT","SFF","SLE","TCM","TIW","TTD","YKM","OTH","UAO")
 # Airports to notify GND online
 gndapts = ("ALW","BFI","BLI","EUG","GEG","GRF","HIO","LMT","LWS","MFR","MWH","OLM","PAE","PDT","PSC","RDM","RNT","SFF","SLE","TCM","TIW","TTD","YKM","OTH","UAO")
+# Users
+warnusers = ()
 
 i=0
 #j=0
@@ -269,6 +271,34 @@ for client in clients:
                 if client['facilitytype'] == type and int(client['visualrange']) > limit:
                     msg = "Your visibility of "+client['visualrange']+" is too high! Facility type "+client['facilitytype']+" must be less than "+limit
                     fseutils.sendemail("VISRANGE TOO HIGH", msg, 1)
+    if client['cid'] in warnusers and client['clienttype'] == "PILOT":
+         msg = ""
+         warnapts = destairports + localairports + ["K"+i for i in delapts]
+         if client['planned_destairport'] in warnapts:
+             print("Notifying for "+client['cid'])
+             # Distance from destination
+             dist = fseutils.cosinedist(float(client['latitude']), float(client['longitude']), *destairports[client['planned_destairport']])
+             # Estimate ETA (hours) based on groundspeed
+             eta = dist/int(client['groundspeed'])
+             etahr = str(int(eta))
+             etamin = str(round((eta % 1) * 60))
+             msg = client['realname']+" with CID "+client['cid']+" is flying "+client['callsign']+" to "+client['planned_destairport']+" ETA "+etahr+":"+etamin+"\n"
+             subject = " inbound to "+client['planned_destairport']+"!"
+         elif client['planned_depairport'] in warnapts:
+             print("Notifying for "+client['cid'])
+             msg = client['realname']+" with CID "+client['cid']+" is flying "+client['callsign']+" from "+client['planned_depairport']+"!\n"
+             subject = " flying from "+client['planned_depairport']+"!"
+         if msg:
+             msg += "<br/>All names used by "+client['cid']+":"
+             ret = cur.execute('SELECT realname FROM users WHERE cid = %s', (client['cid'],))
+             maxlen=len(client['realname'])
+             actualname = client['realname']
+             for name in cur.fetchall():
+                 # print(name)
+                 msg+= "<br/>"+name[0]
+                 if len(name[0]) > maxlen:
+                     actualname = name[0]
+             fseutils.sendemail(actualname+subject, msg, 1)
 
 # Another way to do it, insert all rows at end
 #cur.executemany('INSERT INTO flights VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)', rows)
