@@ -112,7 +112,8 @@ with urllib.request.urlopen(dataurl) as response:
     #print(html)
     # Whether we are reading a section with clients to log
     clientsec = 0
-    for line in html.split('\n'):
+    # HTML needs a split on \n, text file doesn't
+    for line in html.split("\n"):
         #print(line)
         line = line.rstrip()
         # Like the universe, header sections begin with bang
@@ -141,29 +142,77 @@ cur.execute('SET NAMES utf8;')
 cur.execute('SET CHARACTER SET utf8;')
 cur.execute('SET character_set_connection=utf8;')
 
-keys = ["callsign", "cid", "realname", "frequency", "latitude", "longitude", "altitude", "groundspeed", "planned_aircraft", "planned_tascruise", "planned_depairport", "planned_altitude", "planned_destairport", "server", "rating", "transponder", "facilitytype", "visualrange", "planned_revision", "planned_flighttype", "planned_deptime", "planned_actdeptime", "planned_hrsenroute", "planned_minenroute", "planned_hrsfuel", "planned_minfuel", "planned_altairport", "planned_remarks", "planned_route", "time_logon", "heading", "QNH_iHg", "QNH_Mb"]
+# Most keys are logged for main db
+keys = ["callsign", "cid", "realname", "latitude", "longitude", "altitude", "groundspeed", "planned_aircraft", "planned_tascruise", "planned_depairport", "planned_altitude", "planned_destairport", "server", "rating", "transponder", "planned_revision", "planned_flighttype", "planned_deptime", "planned_actdeptime", "planned_hrsenroute", "planned_minenroute", "planned_hrsfuel", "planned_minfuel", "planned_altairport", "planned_remarks", "planned_route", "time_logon", "heading", "QNH_iHg"]
+# Fewer logged for local flight db
+localkeys = ["callsign", "latitude", "longitude", "groundspeed", "planned_aircraft", "planned_depairport", "planned_altitude", "planned_destairport", "transponder", "planned_revision", "planned_flighttype", "planned_altairport", "planned_remarks", "planned_route", "time_logon", "heading"]
+# Airports to log for local flights
+localairports = ["KPDX", "KSEA", "KGEG", "KRDM", "KOTH", "KTTD", "KHIO", "KEUG", "KVUO", "KSPB", "KUAO", "KBFI", "KRNT", "KPAE", "KTCM", "KTIW", "KOLM", "KGRF", "KPWT", "KPLU", "S50", "S43", "KMMV"]
 
+i=0
+#j=0
+#pi=0
+#pr=0
+#rows=[]
+print("Processing "+str(tot)+" clients...")
 cur.execute('START TRANSACTION')
 # Go through the current clients and find any we care about
 for client in clients:
     if client['clienttype'] in ["PILOT","PREFILE"]:
+        i+=1
         row = []
+        localrow = []
         # Build the main row list
         for key in keys:
             row.append(client[key])
-        if client['clienttype'] == "PILOT":
-            cur.execute('INSERT INTO flights SELECT %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s FROM DUAL WHERE NOT EXISTS (SELECT * FROM flights WHERE cid = %s AND time_logon = %s and planned_revision = %s LIMIT 1)', (*row, client['cid'], client['time_logon'], client['planned_revision']))
-        elif client['clienttype'] == "PREFILE":
-            cur.execute('INSERT INTO flights SELECT %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s FROM DUAL WHERE NOT EXISTS (SELECT * FROM flights WHERE cid = %s AND planned_route = %s LIMIT 1)', (*row, client['cid'], client['planned_route']))
-            
-        # Improvement on previous code?
-        # if client['clienttype'] == "PILOT":
-            # sql = 'SELECT EXISTS(SELECT 1 FROM flights WHERE cid = %s AND time_logon = %s and planned_revision = %s LIMIT 1)'
-            # val = (client['cid'], client['time_logon'], client['planned_revision'])
-        # elif client['clienttype'] == "PREFILE":
-            # sql = 'SELECT EXISTS(SELECT 1 FROM flights WHERE cid = %s AND planned_route = %s LIMIT 1)'
-            # val = (client['cid'], client['planned_route'])
-        # if not cur.execute(sql, val):
+        # Build the local row list
+        if any(apt in localairports for apt in [client['planned_depairport'],client['planned_destairport']]):
+            for key in localkeys:
+                localrow.append(client[key])
+        if not (client['planned_depairport'] is None and client['planned_destairport'] is None and client['planned_route'] is None):
+            # Process pilot clients
+
+            print("("+str(i)+"/"+str(tot)+") Looking for c/s: "+client['callsign'])
+            cur.execute('INSERT INTO flights SELECT %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s FROM DUAL WHERE NOT EXISTS (SELECT * FROM flights WHERE callsign = %s AND planned_route = %s AND time_logon = %s LIMIT 1)', (*row, client['callsign'], client['planned_route'], client['time_logon']))
+            # Add to local flight db
+            if localrow:
+                cur.execute('INSERT INTO localflights SELECT %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s FROM DUAL WHERE NOT EXISTS (SELECT * FROM localflights WHERE callsign = %s AND planned_route = %s LIMIT 1)', (*localrow, client['callsign'], client['planned_route']))
+            # cur.execute('INSERT INTO flights SELECT %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s FROM DUAL WHERE NOT EXISTS (SELECT * FROM flights WHERE callsign = %s AND time_logon = %s and planned_route = %s LIMIT 1)', (*row, client['callsign'], client['time_logon'], client['planned_route']))
+            # # Add to local flight db
+            # if localrow:
+            #     cur.execute('INSERT INTO localflights SELECT %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s FROM DUAL WHERE NOT EXISTS (SELECT * FROM localflights WHERE callsign = %s AND time_logon = %s AND planned_route = %s LIMIT 1)', (*localrow, client['callsign'], client['time_logon'], client['planned_route']))
+            # if client['clienttype'] == "PILOT":
+            #     pi+=1
+            #     print("("+str(i)+"/"+str(tot)+") Looking for c/s: "+client['callsign']+"   time: "+client['time_logon'])
+            #     #print("P: "+str(len(row)))
+            #     # Only insert if same callsign, time_logon, and revision aren't already logged
+            #     cur.execute('INSERT INTO flights SELECT %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s FROM DUAL WHERE NOT EXISTS (SELECT * FROM flights WHERE callsign = %s AND time_logon = %s and planned_revision = %s LIMIT 1)', (*row, client['callsign'], client['time_logon'], client['planned_revision']))
+            #     # Add to local flight db
+            #     if localrow:
+            #         cur.execute('INSERT INTO localflights SELECT %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s FROM DUAL WHERE NOT EXISTS (SELECT * FROM localflights WHERE callsign = %s AND time_logon = %s AND planned_revision = %s LIMIT 1)', (*localrow, client['callsign'], client['time_logon'], client['planned_revision']))
+            # # Process prefiles
+            # elif client['clienttype'] == "PREFILE":
+            #     pr+=1
+            #     print("("+str(i)+"/"+str(tot)+") Looking for c/s: "+client['callsign']+" PREFILE")
+            #     #print("R: "+str(len(row)))
+            #     # Insert into db if callsign and route aren't already logged
+            #     cur.execute('INSERT INTO flights SELECT %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s FROM DUAL WHERE NOT EXISTS (SELECT * FROM flights WHERE callsign = %s AND planned_route = %s LIMIT 1)', (*row, client['callsign'], client['planned_route']))
+            #     # Insert into local flight db
+            #     if localrow:
+            #         # try:
+            #         cur.execute('INSERT INTO localflights SELECT %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s FROM DUAL WHERE NOT EXISTS (SELECT * FROM localflights WHERE callsign = %s AND planned_route = %s LIMIT 1)', (*localrow, client['callsign'], client['planned_route']))
+                    # except:
+                    #     print(cur._last_executed)
+            # Old db code
+#            print("Adding row len "+str(len(row))+":")
+            #print(row)
+            #print(tuple(client.values()))
+            #cur.execute('INSERT INTO flights VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)', row)
+            #j+=1
+            #rows.append(row)
+        #print(row)
+        #else:
+            #print("X")
 
 # Another way to do it, insert all rows at end
 #cur.executemany('INSERT INTO flights VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)', rows)
