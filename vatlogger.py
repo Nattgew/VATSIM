@@ -8,6 +8,8 @@ import os
 import pickle
 import MySQLdb
 import sys
+sys.path.insert(1, '/home/pi/git/X-Plane-Plugins/')
+import fseutils
 
 #http://status.vatsim.net/status.txt
 #url0=http://data.vattastic.com/vatsim-data.txt
@@ -72,6 +74,14 @@ encoding = "utf-8"
 statusurl = "http://status.vatsim.net/status.txt"
 statusfile = Path("/home/pi/vatstatus.pickle")
 
+cocc = {
+    "1": 300,
+    "2": 20,
+    "3": 20,
+    "4": 50,
+    "5": 150,
+    "6": 600
+}
 
 try:
     dataurls = pickle.load(open(statusfile, "rb"))
@@ -230,6 +240,11 @@ for client in clients:
                 # print(name)
                 msg+= "<br/>"+name[0]
             fseutils.sendemail(client['callsign']+" Online", msg, 1)
+        if client['cid'] == "":
+            for type, limit in cocc.items():
+                if client['facilitytype'] == type and int(client['visualrange']) > limit:
+                    msg = "Your visibility of "+client['visualrange']+" is too high! Facility type "+client['facilitytype']+" must be less than "+limit
+                    fseutils.sendemail("VISRANGE TOO HIGH", msg, 1)
 
 # Another way to do it, insert all rows at end
 #cur.executemany('INSERT INTO flights VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)', rows)
