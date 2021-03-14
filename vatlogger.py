@@ -5,7 +5,9 @@ import random
 from pathlib import Path
 import urllib.request
 import os
+import pickle
 import MySQLdb
+import sys
 
 #http://status.vatsim.net/status.txt
 #url0=http://data.vattastic.com/vatsim-data.txt
@@ -61,16 +63,28 @@ def newclient(line):
 encoding = "utf-8"
 # The status url provides lists of servers
 statusurl = "http://status.vatsim.net/status.txt"
-dataurls = []
+statusfile = Path("/home/pi/vatstatus.pickle")
 
-with urllib.request.urlopen(statusurl) as response:
-    html = response.read().decode(encoding, errors='replace')
-    for line in html.split('\n'):
-        #print(line)
-        line = line.rstrip()
-        # The url0 lines are places with full data files
-        if line[:5] == "url0=":
-            dataurls.append(line[5:])
+
+try:
+    dataurls = pickle.load(open(statusfile, "rb"))
+    print("Got server list from file")
+except FileNotFoundError:
+    # No file, start with empty list
+    print("Getting new server list")
+    dataurls = []
+    # Get status page to find list of servers
+    with urllib.request.urlopen(statusurl) as response:
+        html = response.read().decode(encoding, errors='replace')
+        for line in html.split('\n'):
+            #print(line)
+            line = line.rstrip()
+            # The url0 lines are places with full data files
+            if line[:5] == "url0=":
+                dataurls.append(line[5:])
+
+# Save server list for next time
+pickle.dump(dataurls, open(statusfile, "wb"))
 
 # Pick one at random because they asked nicely
 dataurl = random.choice(dataurls)
