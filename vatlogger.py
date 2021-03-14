@@ -56,8 +56,15 @@ def newclient(line):
         if val == "":
             val = None
         client[key] = val
-    if client['clienttype'] == "":
+    #print(client['clienttype'])
+    # Disregard large transponder values
+    if client['transponder'] and int(client['transponder']) > 7777:
+        client['transponder'] = None
+    # Prefiles have no client type
+    if client['clienttype'] == None:
         client['clienttype'] = "PREFILE"
+    if client['realname'] == None:
+        client['realname'] = ""
     return client
 
 encoding = "utf-8"
