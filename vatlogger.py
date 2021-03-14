@@ -4,7 +4,8 @@
 import random
 from pathlib import Path
 import urllib.request
-import os
+import json
+#import os
 import pickle
 import MySQLdb
 import sys
@@ -47,6 +48,16 @@ import fseutils
 #         self.lat = lat
 #         self.lon = lon
 
+def sanitizeclient(client):
+    # Disregard large transponder values
+    if client['transponder'] and int(client['transponder']) > 7777:
+        client['transponder'] = None
+    # Prefiles have no client type
+    if client['clienttype'] == None:
+        client['clienttype'] = "PREFILE"
+    if client['realname'] == None:
+        client['realname'] = ""
+    return client
 
 def newclient(line):
     client = {}
@@ -59,20 +70,80 @@ def newclient(line):
             val = None
         client[key] = val
     #print(client['clienttype'])
-    # Disregard large transponder values
-    if client['transponder'] and int(client['transponder']) > 7777:
-        client['transponder'] = None
-    # Prefiles have no client type
-    if client['clienttype'] == None:
-        client['clienttype'] = "PREFILE"
-    if client['realname'] == None:
-        client['realname'] = ""
+
+    client = sanitizeclient(client)
+
     return client
+
+def newjsonclient(jclient, clienttype):
+    client = {}
+    #print(jclient)
+    # Keys we still have
+    sameoldkeys = ["callsign", "cid", "realname", "frequency", "latitude", "longitude", "altitude", "groundspeed", "server", "rating", "transponder", "facilitytype", "visualrange", "atis_message", "time_last_atis_received", "time_logon", "heading", "QNH_iHg", "QNH_Mb"]
+    # New names for keys we still have
+    samenewkeys = ["callsign", "cid", "name", "frequency", "latitude", "longitude", "altitude", "groundspeed", "server", "rating", "transponder", "facility", "visual_range", "text_atis", "last_updated", "logon_time", "heading", "qnh_i_hg", "qnh_mb"]
+    # Items that are now in the flight plan section
+    routeoldkeys = ["planned_aircraft", "planned_tascruise", "planned_depairport", "planned_altitude", "planned_destairport", "planned_flighttype", "planned_deptime", "planned_altairport", "planned_remarks", "planned_route"]
+    # New key in the flight plan section
+    routenewkeys = ["aircraft_faa", "cruise_tas", "departure", "altitude", "arrival", "flight_rules", "deptime", "alternate", "remarks", "route"]
+    # Items we don't have a good new key for
+    nokeys = ["planned_revision","planned_actdeptime"]
+
+    # Add keys that are same or different names
+    for i in range(len(sameoldkeys)):
+        if samenewkeys[i] not in jclient or jclient[samenewkeys[i]] == "":
+            val = None
+        else:
+            val = jclient[samenewkeys[i]]
+        client[sameoldkeys[i]] = val
+
+    if (clienttype == "PILOT" or clienttype == "PREFILE") and jclient["flight_plan"] is not None:
+        # Handle pilot specific stuff
+        fp = jclient["flight_plan"]
+        # Add the route keys
+        for i in range(len(routeoldkeys)):
+            #print("  Running key "+str(i))
+            client[routeoldkeys[i]] = fp[routenewkeys[i]]
+        # Convert new total times to hrs/mins
+        hrs = int(int(fp["enroute_time"])/60)
+        mins = int(fp["enroute_time"]) % 60
+        client["planned_hrsenroute"] = hrs
+        client["planned_minsenroute"] = mins
+        hrs = int(int(fp["fuel_time"])/60)
+        mins = int(fp["fuel_time"]) % 60
+        client["planned_hrsfuel"] = hrs
+        client["planned_minsfuel"] = mins
+        #print("  er: "+str(fp["enroute_time"])+" "+str(client["planned_hrsenroute"])+":"+str(client["planned_minsenroute"]))
+        #print("  fuel: "+str(fp["fuel_time"])+" "+str(client["planned_hrsfuel"])+":"+str(client["planned_minsfuel"]))
+    else:
+        # Set these keys to None
+        for i in range(len(routeoldkeys)):
+            client[routeoldkeys[i]] = None
+        client["planned_hrsenroute"] = None
+        client["planned_minsenroute"] = None
+        client["planned_hrsfuel"] = None
+        client["planned_minsfuel"] = None
+
+    for i in range(len(nokeys)):
+        client[nokeys[i]] = None
+
+    client["clienttype"] = clienttype
+
+    client = sanitizeclient(client)
+
+    print(client)
+
+    return client
+
 
 encoding = "utf-8"
 # The status url provides lists of servers
 statusurl = "http://status.vatsim.net/status.txt"
 statusfile = Path("/home/pi/vatstatus.pickle")
+# The url0 lines are full txt data files (deprecated)
+# The json0 lines are full json data files (deprecated)
+# The json3 lines are full json data files (current format)
+statusformat = "json3"
 
 cocc = {
     "1": 300,
@@ -96,9 +167,8 @@ except FileNotFoundError:
         for line in html.split('\n'):
             #print(line)
             line = line.rstrip()
-            # The url0 lines are places with full data files
-            if line[:5] == "url0=":
-                dataurls.append(line[5:])
+            if line.split("=")[0] == statusformat:
+                dataurls.append(line.split("=")[1])
 
 # Save server list for next time
 pickle.dump(dataurls, open(statusfile, "wb"))
@@ -120,27 +190,37 @@ with urllib.request.urlopen(dataurl) as response:
 #with open(datafile, "r") as html:
     html = response.read().decode(encoding, errors='replace')
     #print(html)
-    # Whether we are reading a section with clients to log
-    clientsec = 0
-    # HTML needs a split on \n, text file doesn't
-    for line in html.split("\n"):
-        #print(line)
-        line = line.rstrip()
-        # Like the universe, header sections begin with bang
-        if line[:1] == "!":
+    if statusformat == "json3":
+        vatsimdata = json.loads(html)
+        # general, pilots, controllers, prefiles, servers, facilities, ratings, pilot_ratings
+        for c in vatsimdata['pilots']:
+            clients.append(newjsonclient(c, "PILOT"))
+        for c in vatsimdata['controllers']:
+            clients.append(newjsonclient(c, "ATC"))
+        for c in vatsimdata['prefiles']:
+            clients.append(newjsonclient(c, "PREFILE"))
+    elif statusformat == "url0":
+        # Whether we are reading a section with clients to log
+        clientsec = 0
+        # HTML needs a split on \n, text file doesn't
+        for line in html.split("\n"):
             #print(line)
-            # These are the sections we are looking for
-            if line == "!CLIENTS:" or line == "!PREFILE:":
+            line = line.rstrip()
+            # Like the universe, header sections begin with bang
+            if line[:1] == "!":
                 #print(line)
-                clientsec = 1
-            else:
-                clientsec = 0
-        # If line is not empty or a comment
-        elif line and line[:1] != ";":
-            # Parse the client in the list
-            if clientsec:
-                #print(line)
-                clients.append(newclient(line))
+                # These are the sections we are looking for
+                if line == "!CLIENTS:" or line == "!PREFILE:":
+                    #print(line)
+                    clientsec = 1
+                else:
+                    clientsec = 0
+            # If line is not empty or a comment
+            elif line and line[:1] != ";":
+                # Parse the client in the list
+                if clientsec:
+                    #print(line)
+                    clients.append(newclient(line))
 #print("Processing clients from "+sys.argv[1]+"...")
 db = MySQLdb.connect(host="localhost",
                      user="",
