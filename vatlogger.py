@@ -148,12 +148,17 @@ keys = ["callsign", "cid", "realname", "latitude", "longitude", "altitude", "gro
 localkeys = ["callsign", "latitude", "longitude", "groundspeed", "planned_aircraft", "planned_depairport", "planned_altitude", "planned_destairport", "transponder", "planned_revision", "planned_flighttype", "planned_altairport", "planned_remarks", "planned_route", "time_logon", "heading"]
 # Airports to log for local flights
 localairports = ["KPDX", "KSEA", "KGEG", "KRDM", "KOTH", "KTTD", "KHIO", "KEUG", "KVUO", "KSPB", "KUAO", "KBFI", "KRNT", "KPAE", "KTCM", "KTIW", "KOLM", "KGRF", "KPWT", "KPLU", "S50", "S43", "KMMV"]
+# Airports to notify DEL online
+delapts = ("ALW","BFI","BLI","EUG","GEG","GRF","HIO","LMT","LWS","MFR","MWH","OLM","PAE","PDT","PSC","RDM","RNT","SFF","SLE","TCM","TIW","TTD","YKM","OTH","UAO")
+# Airports to notify GND online
+gndapts = ("ALW","BFI","BLI","EUG","GEG","GRF","HIO","LMT","LWS","MFR","MWH","OLM","PAE","PDT","PSC","RDM","RNT","SFF","SLE","TCM","TIW","TTD","YKM","OTH","UAO")
 
 i=0
 #j=0
 #pi=0
 #pr=0
 #rows=[]
+tot=len([i for i in clients if i['clienttype'] in ["PILOT","PREFILE"]])
 print("Processing "+str(tot)+" clients...")
 cur.execute('START TRANSACTION')
 # Go through the current clients and find any we care about
@@ -213,6 +218,18 @@ for client in clients:
         #print(row)
         #else:
             #print("X")
+    # Check if ATC client should be notified for
+    elif client['clienttype'] == "ATC":
+        csel = client['callsign'].split('_')
+        if (csel[-1] == "DEL" and csel[0] in delapts) or (csel[-1] == "GND" and csel[0] in gndapts):
+            print("Notifying for "+client['callsign'])
+            ret = cur.execute('SELECT realname FROM users WHERE cid = %s', (client['cid'],))
+            msg = client['realname']+" with CID "+client['cid']+" is on "+client['callsign']+" with freq "+client['frequency']
+            msg += "<br/>All names used by "+client['cid']+":"
+            for name in cur.fetchall():
+                # print(name)
+                msg+= "<br/>"+name[0]
+            fseutils.sendemail(client['callsign']+" Online", msg, 1)
 
 # Another way to do it, insert all rows at end
 #cur.executemany('INSERT INTO flights VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)', rows)
