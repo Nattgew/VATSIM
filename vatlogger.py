@@ -189,6 +189,9 @@ print("Processing "+str(tot)+" clients...")
 cur.execute('START TRANSACTION')
 # Go through the current clients and find any we care about
 for client in clients:
+    # Add to user db
+    if client['cid'] is not None:
+        cur.execute('INSERT INTO users VALUES(%s, %s) ON DUPLICATE KEY UPDATE cid = VALUES(cid), realname = VALUES(realname)', (client['cid'], client['realname']))
     if client['clienttype'] in ["PILOT","PREFILE"]:
         i+=1
         row = []
